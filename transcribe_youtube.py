@@ -52,6 +52,11 @@ class WhisperTranscriber:
             ],
             "progress_hooks": [self._download_progress_hook],
             "logger": logger,
+            # Adding custom HTTP headers to spoof a browser user-agent
+            "http_headers": {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/92.0.4515.107 Safari/537.36"
+            },
         }
 
         try:
