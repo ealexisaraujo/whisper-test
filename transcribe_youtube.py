@@ -32,11 +32,30 @@ class WhisperTranscriber:
                 logger.error(f"Failed to load model: {str(e)}")
                 raise
 
-    def download_youtube(self, url: str, output_dir: str) -> str:
-        """Step 1: Download YouTube video audio"""
+    def download_youtube(
+        self,
+        url: str,
+        output_dir: str,
+        cookies_file: str = None,
+        browser_cookies: str = None,
+    ) -> str:
+        """Step 1: Download YouTube video audio
+
+        Args:
+            url: YouTube URL to download
+            output_dir: Directory to save downloaded audio
+            cookies_file: Path to cookies file for authentication
+            browser_cookies: Browser name to extract cookies from (chrome, firefox, etc.)
+        """
         logger.info("\n=== Step 1: YouTube Download ===")
         logger.info(f"Processing URL: {url}")
         logger.info(f"Output directory: {output_dir}")
+
+        # Debug log for cookie options
+        if cookies_file:
+            logger.info(f"Using cookies file: {cookies_file}")
+        if browser_cookies:
+            logger.info(f"Using cookies from browser: {browser_cookies}")
 
         timestamp = int(time.time())
         output_template = os.path.join(output_dir, f"audio_{timestamp}.%(ext)s")
@@ -58,6 +77,12 @@ class WhisperTranscriber:
                 "(KHTML, like Gecko) Chrome/92.0.4515.107 Safari/537.36"
             },
         }
+
+        # Add cookies configuration if provided
+        if cookies_file:
+            ydl_opts["cookiefile"] = cookies_file
+        if browser_cookies:
+            ydl_opts["cookiesfrombrowser"] = (browser_cookies,)
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -227,6 +252,15 @@ def main():
     parser.add_argument(
         "--format", choices=["txt", "srt"], default="txt", help="Output format"
     )
+    # Add YouTube authentication options
+    parser.add_argument(
+        "--cookies", help="Path to cookies file for YouTube authentication"
+    )
+    parser.add_argument(
+        "--browser-cookies",
+        choices=["chrome", "firefox", "opera", "edge", "safari"],
+        help="Browser to extract cookies from for YouTube authentication",
+    )
     args = parser.parse_args()
 
     logger.info("\n=== Whisper Transcription Pipeline Started ===")
@@ -234,6 +268,12 @@ def main():
     logger.info(f"Language: {args.language}")
     logger.info(f"Model: {args.model}")
     logger.info(f"Output format: {args.format}")
+
+    # Log cookie options if provided
+    if args.cookies:
+        logger.info(f"Cookies file: {args.cookies}")
+    if args.browser_cookies:
+        logger.info(f"Browser cookies: {args.browser_cookies}")
 
     is_youtube = args.input.startswith(("http://", "https://")) and (
         "youtube.com" in args.input or "youtu.be" in args.input
@@ -258,7 +298,13 @@ def main():
             temp_dir = tempfile.mkdtemp()
             logger.info(f"Created temporary directory: {temp_dir}")
 
-            audio_file = transcriber.download_youtube(args.input, temp_dir)
+            # Pass cookie information to download_youtube
+            audio_file = transcriber.download_youtube(
+                args.input,
+                temp_dir,
+                cookies_file=args.cookies,
+                browser_cookies=args.browser_cookies,
+            )
             wav_file = transcriber.convert_to_wav(audio_file)
             result = transcriber.transcribe(wav_file, args.language)
             output_base = os.path.join(
