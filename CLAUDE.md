@@ -37,8 +37,6 @@ All production code lives in two files at the project root:
 - **`transcribe_youtube.py`** — the entire pipeline: CLI parsing, input resolution, download, audio normalization, backend transcription, chunking, and output writing. Key classes follow a linear pipeline: `InputResolver` -> `MediaDownloader` -> `AudioNormalizer` -> `BackendFactory`/`TranscriptionBackend` -> `OutputWriter`. Data flows through dataclasses: `SourceRequest` -> `SourceMedia` -> `NormalizedMedia` -> `BackendResult`.
 - **`logger_utils.py`** — centralized logging config, `log_stage()` context manager for timing pipeline stages, `format_bytes()` helper.
 
-Other `*.py` files at the root (`transcribir*.py`, `transcribe_whisper*.py`) are **legacy scripts** not part of the current workflow.
-
 ### Backend Design
 
 Each backend is a `TranscriptionBackend` subclass (`MLXWhisperBackend`, `OpenAIBackend`). They share a unified output schema (segments with `start`/`end`/`speaker`/`text`) and produce TXT, SRT, and JSON outputs.
