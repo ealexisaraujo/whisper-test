@@ -10,17 +10,17 @@ Use this decision order:
 Single command for your long Spanish YouTube case:
 ```bash
 python transcribe_youtube.py "https://www.youtube.com/watch?v=7jERZcUcBZA" \
-  --backend whisper \
+  --backend mlx-whisper \
   --language es \
   --output-formats txt,srt,json \
   --output-dir work/out \
   --output-basename 7jERZcUcBZA_es
 ```
 
-Best local quality with context:
+Local file with context:
 ```bash
 python transcribe_youtube.py ./meeting.mp4 \
-  --backend vibevoice \
+  --backend mlx-whisper \
   --language es \
   --context-info "Reunion comercial trimestral" \
   --hotwords "Alexis,Platzi,Ingresos"
@@ -42,50 +42,67 @@ python transcribe_youtube.py ./meeting.mp4 \
   --output-formats txt,srt,json
 ```
 
+MLX Whisper with custom model:
+```bash
+python transcribe_youtube.py ./meeting.mp4 \
+  --backend mlx-whisper \
+  --model mlx-community/whisper-large-v3 \
+  --language en
+```
+
 Disable chunking:
 ```bash
-python transcribe_youtube.py ./audio.wav --backend whisper --chunk-mode off
+python transcribe_youtube.py ./audio.wav --backend mlx-whisper --chunk-mode off
 ```
 
 Force chunking:
 ```bash
-python transcribe_youtube.py ./audio.wav --backend whisper --chunk-mode force --chunk-seconds 1200
+python transcribe_youtube.py ./audio.wav --backend mlx-whisper --chunk-mode force --chunk-seconds 1200
 ```
 
 If a backend fails (manual switch only):
 ```bash
-python transcribe_youtube.py "<input>" --backend whisper
+python transcribe_youtube.py "<input>" --backend mlx-whisper
 python transcribe_youtube.py "<input>" --backend openai --model whisper-1
-python transcribe_youtube.py "<input>" --backend vibevoice --device cpu
+```
+
+High-visibility logging (for "it looks stuck" runs):
+```bash
+python transcribe_youtube.py "<input>" \
+  --backend mlx-whisper \
+  --timeout-seconds 900 \
+  --log-level DEBUG \
+  --progress-log-seconds 10 \
+  --log-file ./transcribe_debug.log
 ```
 
 ## ES
-Usa este orden de decisión:
+Usa este orden de decision:
 1. Elige backend primero (`--backend`).
 2. Agrega idioma si lo conoces (`--language es`).
-3. Mantén chunking en `auto` salvo que necesites forzar o desactivar.
+3. Manten chunking en `auto` salvo que necesites forzar o desactivar.
 4. Define salidas (`--output-formats txt,srt,json`).
 
-Comando único para tu caso de YouTube largo en español:
+Comando unico para tu caso de YouTube largo en espanol:
 ```bash
 python transcribe_youtube.py "https://www.youtube.com/watch?v=7jERZcUcBZA" \
-  --backend whisper \
+  --backend mlx-whisper \
   --language es \
   --output-formats txt,srt,json \
   --output-dir work/out \
   --output-basename 7jERZcUcBZA_es
 ```
 
-Mejor calidad local con contexto:
+Archivo local con contexto:
 ```bash
 python transcribe_youtube.py ./meeting.mp4 \
-  --backend vibevoice \
+  --backend mlx-whisper \
   --language es \
   --context-info "Reunion comercial trimestral" \
   --hotwords "Alexis,Platzi,Ingresos"
 ```
 
-Ruta rápida OpenAI:
+Ruta rapida OpenAI:
 ```bash
 python transcribe_youtube.py ./meeting.mp4 \
   --backend openai \
@@ -101,19 +118,36 @@ python transcribe_youtube.py ./meeting.mp4 \
   --output-formats txt,srt,json
 ```
 
+MLX Whisper con modelo personalizado:
+```bash
+python transcribe_youtube.py ./meeting.mp4 \
+  --backend mlx-whisper \
+  --model mlx-community/whisper-large-v3 \
+  --language en
+```
+
 Desactivar chunking:
 ```bash
-python transcribe_youtube.py ./audio.wav --backend whisper --chunk-mode off
+python transcribe_youtube.py ./audio.wav --backend mlx-whisper --chunk-mode off
 ```
 
 Forzar chunking:
 ```bash
-python transcribe_youtube.py ./audio.wav --backend whisper --chunk-mode force --chunk-seconds 1200
+python transcribe_youtube.py ./audio.wav --backend mlx-whisper --chunk-mode force --chunk-seconds 1200
 ```
 
 Si falla un backend (solo cambio manual):
 ```bash
-python transcribe_youtube.py "<input>" --backend whisper
+python transcribe_youtube.py "<input>" --backend mlx-whisper
 python transcribe_youtube.py "<input>" --backend openai --model whisper-1
-python transcribe_youtube.py "<input>" --backend vibevoice --device cpu
+```
+
+Logging de alta visibilidad (cuando parece que se queda congelado):
+```bash
+python transcribe_youtube.py "<input>" \
+  --backend mlx-whisper \
+  --timeout-seconds 900 \
+  --log-level DEBUG \
+  --progress-log-seconds 10 \
+  --log-file ./transcribe_debug.log
 ```

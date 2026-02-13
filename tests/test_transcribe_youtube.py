@@ -14,7 +14,6 @@ from transcribe_youtube import (
     build_context_info,
     format_srt_timestamp,
     has_transcription_content,
-    normalize_vibevoice_segments,
     offset_segments,
     parse_output_formats,
     run_selected_backend,
@@ -30,19 +29,6 @@ def test_format_srt_timestamp_uses_comma_milliseconds() -> None:
 def test_build_context_info_merges_hotwords() -> None:
     context = build_context_info("Meeting about platform migration", "Alice, Bob ,  API")
     assert context == "Meeting about platform migration\nHotwords: Alice, Bob, API"
-
-
-def test_normalize_vibevoice_segments_maps_schema() -> None:
-    raw = [
-        {
-            "start_time": 0.2,
-            "end_time": 1.7,
-            "speaker_id": "2",
-            "text": " Hola equipo ",
-        }
-    ]
-    out = normalize_vibevoice_segments(raw)
-    assert out == [{"start": 0.2, "end": 1.7, "speaker": "2", "text": "Hola equipo"}]
 
 
 def test_parse_output_formats_dedupes_and_validates() -> None:
@@ -78,8 +64,8 @@ def test_manual_switch_policy_calls_only_selected_backend(tmp_path: Path) -> Non
 
     with pytest.raises(TranscriptionError):
         run_selected_backend(
-            "vibevoice",
-            {"vibevoice": failing, "openai": other},
+            "mlx-whisper",
+            {"mlx-whisper": failing, "openai": other},
             audio_path=tmp_path / "audio.wav",
             language=None,
             context_info=None,
@@ -135,8 +121,8 @@ def test_media_downloader_rejects_youtube_id_mismatch(monkeypatch: pytest.Monkey
 
 def test_output_writer_generates_txt_srt_json(tmp_path: Path) -> None:
     payload = {
-        "backend": "vibevoice",
-        "model": "microsoft/VibeVoice-ASR",
+        "backend": "mlx-whisper",
+        "model": "mlx-community/whisper-turbo",
         "source": "meeting.mp4",
         "language": "en",
         "duration_sec": 10.0,
@@ -175,7 +161,7 @@ def test_should_chunk_audio_auto_rules(tmp_path: Path) -> None:
     # Auto chunk by duration
     assert should_chunk_audio(
         chunk_mode="auto",
-        backend="whisper",
+        backend="mlx-whisper",
         duration_sec=4000.0,
         audio_path=audio_file,
         chunk_threshold_minutes=45,
@@ -200,6 +186,31 @@ def test_should_chunk_audio_auto_rules(tmp_path: Path) -> None:
         audio_path=audio_file,
         chunk_threshold_minutes=45,
         openai_max_file_mb=1,
+    )
+
+
+def test_should_chunk_audio_mlx_whisper_uses_generic_threshold(tmp_path: Path) -> None:
+    audio_file = tmp_path / "audio.wav"
+    audio_file.write_bytes(b"x")
+
+    # Should chunk when duration exceeds generic threshold
+    assert should_chunk_audio(
+        chunk_mode="auto",
+        backend="mlx-whisper",
+        duration_sec=4000.0,
+        audio_path=audio_file,
+        chunk_threshold_minutes=45,
+        openai_max_file_mb=24,
+    )
+
+    # Should NOT chunk when duration is under generic threshold
+    assert not should_chunk_audio(
+        chunk_mode="auto",
+        backend="mlx-whisper",
+        duration_sec=600.0,
+        audio_path=audio_file,
+        chunk_threshold_minutes=45,
+        openai_max_file_mb=24,
     )
 
 

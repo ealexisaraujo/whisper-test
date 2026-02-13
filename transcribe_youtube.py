@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Backend-driven transcription CLI for YouTube and local media files.
 
-Primary backend is VibeVoice-ASR (best-effort on macOS), with optional OpenAI
-and local Whisper backends. Backend switching is manual by design.
+Supports MLX-Whisper (Apple Silicon) and OpenAI backends.
+Backend switching is manual by design.
 """
 
 from __future__ import annotations
@@ -11,20 +11,22 @@ import argparse
 import json
 import logging
 import os
-import platform
 import re
 import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 from urllib.parse import parse_qs, urlparse
+
+from logger_utils import configure_logging, format_bytes, log_stage
 
 try:
     from dotenv import load_dotenv
@@ -34,13 +36,12 @@ except ModuleNotFoundError:  # pragma: no cover - fallback for minimal test envs
 
 LOGGER = logging.getLogger("transcribe_youtube")
 
-SUPPORTED_BACKENDS = ("vibevoice", "openai", "whisper")
+SUPPORTED_BACKENDS = ("mlx-whisper", "openai")
 SUPPORTED_OUTPUT_FORMATS = ("txt", "srt", "json")
 
 DEFAULT_MODELS = {
-    "vibevoice": "microsoft/VibeVoice-ASR",
+    "mlx-whisper": "mlx-community/whisper-turbo",
     "openai": "gpt-4o-transcribe",
-    "whisper": "medium",
 }
 
 OPENAI_TRANSCRIPTION_MODELS = {
@@ -115,11 +116,17 @@ class InputResolver:
     def resolve(cls, input_value: str) -> SourceRequest:
         input_value = _normalize_input_source(input_value)
         if cls._is_youtube_url(input_value):
+            LOGGER.info("Input resolved as YouTube URL.")
             return SourceRequest(source=input_value, is_youtube=True)
 
         local = Path(input_value).expanduser().resolve()
         if not local.exists():
             raise TranscriptionError(f"Input file not found: {local}")
+        try:
+            size_label = format_bytes(local.stat().st_size)
+        except OSError:
+            size_label = "unknown"
+        LOGGER.info("Input resolved as local file: %s (size=%s)", local, size_label)
         return SourceRequest(source=str(local), is_youtube=False, local_path=local)
 
     @classmethod
@@ -169,14 +176,17 @@ class MediaDownloader:
         if cookies_file or browser_cookies:
             LOGGER.info("YouTube auth options enabled (path details hidden for safety).")
 
+        LOGGER.info("Starting YouTube download/extract with yt-dlp...")
         try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
+            with log_stage(LOGGER, "youtube_download", source=url):
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(url, download=True)
         except Exception as exc:
             raise TranscriptionError(f"YouTube download failed: {exc}") from exc
 
         video_id = info.get("id") or f"youtube_{int(time.time())}"
         title = info.get("title") or video_id
+        LOGGER.info("YouTube metadata resolved: id=%s title=%s", video_id, title)
         requested_id = _extract_youtube_id(url)
         if requested_id and video_id and requested_id != video_id:
             raise TranscriptionError(
@@ -195,6 +205,12 @@ class MediaDownloader:
                 raise TranscriptionError("YouTube download completed but audio file was not found.")
             audio_path = candidates[-1]
 
+        try:
+            audio_size = format_bytes(audio_path.stat().st_size)
+        except OSError:
+            audio_size = "unknown"
+        LOGGER.info("Downloaded audio file: %s (size=%s)", audio_path, audio_size)
+
         return SourceMedia(
             source=url,
             local_path=audio_path,
@@ -207,9 +223,8 @@ class AudioNormalizer:
     """Converts any media input into backend-appropriate WAV for predictable behavior."""
 
     SAMPLE_RATES = {
-        "vibevoice": 24000,
+        "mlx-whisper": 16000,
         "openai": 16000,
-        "whisper": 16000,
     }
 
     def normalize(self, media_path: Path, backend: str, output_dir: Path) -> NormalizedMedia:
@@ -230,8 +245,17 @@ class AudioNormalizer:
             str(out),
         ]
 
+        LOGGER.info(
+            "Normalizing media to WAV: backend=%s sample_rate=%sHz input=%s output=%s",
+            backend,
+            sample_rate,
+            media_path,
+            out,
+        )
+        LOGGER.debug("Normalization command: %s", " ".join(shlex.quote(part) for part in command))
         try:
-            subprocess.run(command, check=True, capture_output=True, text=True)
+            with log_stage(LOGGER, "audio_normalization", backend=backend, sample_rate=sample_rate):
+                subprocess.run(command, check=True, capture_output=True, text=True)
         except FileNotFoundError as exc:
             raise TranscriptionError("ffmpeg not found. Please install ffmpeg first.") from exc
         except subprocess.CalledProcessError as exc:
@@ -239,6 +263,7 @@ class AudioNormalizer:
             raise TranscriptionError(f"Audio normalization failed: {stderr or exc}") from exc
 
         duration = _probe_duration_seconds(out)
+        LOGGER.info("Normalized audio duration: %.2fs", duration)
         return NormalizedMedia(path=out, duration_sec=duration)
 
 
@@ -256,143 +281,6 @@ class TranscriptionBackend:
         raise NotImplementedError
 
 
-class VibeVoiceBackend(TranscriptionBackend):
-    """Local VibeVoice backend (best-effort on Mac)."""
-
-    def __init__(self, model_name: str, device: str):
-        self.model_name = model_name
-        self.requested_device = device
-
-    def transcribe(
-        self,
-        audio_path: Path,
-        language: Optional[str],
-        context_info: Optional[str],
-        timeout_seconds: int,
-        generation: Mapping[str, Any],
-    ) -> BackendResult:
-        del language  # VibeVoice handles multilingual input without explicit language flag.
-
-        try:
-            import torch
-            from vibevoice.modular.modeling_vibevoice_asr import (
-                VibeVoiceASRForConditionalGeneration,
-            )
-            from vibevoice.processor.vibevoice_asr_processor import VibeVoiceASRProcessor
-        except ModuleNotFoundError as exc:
-            raise TranscriptionError(
-                "VibeVoice dependencies are missing. Install optional stack with: "
-                "pip install -r requirements-vibevoice.txt"
-            ) from exc
-
-        device = _resolve_torch_device(torch, self.requested_device)
-        if platform.system() == "Darwin" and device in {"cpu", "mps"}:
-            LOGGER.warning(
-                "Running VibeVoice on macOS (%s): best-effort mode; this may be slow or OOM.",
-                device,
-            )
-
-        dtype = torch.float16 if device in {"cuda", "mps"} else torch.float32
-
-        try:
-            processor = VibeVoiceASRProcessor.from_pretrained(
-                self.model_name,
-                language_model_pretrained_name="Qwen/Qwen2.5-7B",
-            )
-            model = VibeVoiceASRForConditionalGeneration.from_pretrained(
-                self.model_name,
-                dtype=dtype,
-                attn_implementation="sdpa",
-                trust_remote_code=True,
-            )
-            model = model.to(device)
-            model.eval()
-        except Exception as exc:
-            raise TranscriptionError(
-                f"Failed to load VibeVoice model '{self.model_name}' on {device}: {exc}"
-            ) from exc
-
-        inputs = processor(
-            audio=str(audio_path),
-            sampling_rate=None,
-            return_tensors="pt",
-            add_generation_prompt=True,
-            context_info=context_info,
-        )
-        inputs = {
-            k: v.to(device) if hasattr(v, "to") else v
-            for k, v in inputs.items()
-        }
-
-        max_new_tokens = int(generation.get("max_new_tokens", 512))
-        temperature = float(generation.get("temperature", 0.0))
-        top_p = float(generation.get("top_p", 1.0))
-        do_sample = bool(generation.get("do_sample", False))
-        num_beams = int(generation.get("num_beams", 1))
-        repetition_penalty = float(generation.get("repetition_penalty", 1.0))
-
-        gen_kwargs: Dict[str, Any] = {
-            "max_new_tokens": max_new_tokens,
-            "do_sample": do_sample,
-            "num_beams": num_beams,
-            "repetition_penalty": repetition_penalty,
-            "pad_token_id": processor.pad_id,
-            "eos_token_id": processor.tokenizer.eos_token_id,
-        }
-        if do_sample:
-            gen_kwargs["temperature"] = temperature
-            gen_kwargs["top_p"] = top_p
-
-        def _generate() -> Any:
-            with torch.no_grad():
-                return model.generate(**inputs, **gen_kwargs)
-
-        try:
-            if timeout_seconds > 0:
-                with ThreadPoolExecutor(max_workers=1) as executor:
-                    future = executor.submit(_generate)
-                    output_ids = future.result(timeout=timeout_seconds)
-            else:
-                output_ids = _generate()
-        except FutureTimeoutError as exc:
-            raise TranscriptionError(
-                "VibeVoice inference timed out. Increase --timeout-seconds or lower generation settings."
-            ) from exc
-        except RuntimeError as exc:
-            msg = str(exc)
-            if "out of memory" in msg.lower():
-                raise TranscriptionError(
-                    "VibeVoice ran out of memory. Try --device cpu or use --backend openai."
-                ) from exc
-            raise TranscriptionError(f"VibeVoice inference failed: {exc}") from exc
-
-        input_len = int(inputs["input_ids"].shape[1])
-        generated_ids = output_ids[0, input_len:]
-
-        eos_id = processor.tokenizer.eos_token_id
-        if eos_id is not None:
-            eos_positions = (generated_ids == eos_id).nonzero(as_tuple=True)[0]
-            if len(eos_positions) > 0:
-                generated_ids = generated_ids[: int(eos_positions[0])]
-
-        raw_text = processor.decode(generated_ids, skip_special_tokens=True).strip()
-        try:
-            raw_segments = processor.post_process_transcription(raw_text)
-        except Exception:
-            raw_segments = []
-
-        segments = normalize_vibevoice_segments(raw_segments)
-        text = raw_text or combine_text_from_segments(segments)
-
-        return BackendResult(
-            text=text,
-            segments=segments,
-            language=None,
-            duration_sec=_probe_duration_seconds(audio_path),
-            raw={"raw_text": raw_text, "segments": raw_segments},
-        )
-
-
 class OpenAIBackend(TranscriptionBackend):
     """OpenAI transcription backend."""
 
@@ -408,9 +296,9 @@ class OpenAIBackend(TranscriptionBackend):
         timeout_seconds: int,
         generation: Mapping[str, Any],
     ) -> BackendResult:
-        del timeout_seconds
-        del generation
+        progress_log_seconds = max(1, int(generation.get("progress_log_seconds", 20)))
 
+        LOGGER.info("OpenAI transcription started: model=%s audio=%s", self.model_name, audio_path)
         if self.model_name not in OPENAI_TRANSCRIPTION_MODELS:
             raise CapabilityError(
                 f"Unsupported OpenAI model '{self.model_name}'. Supported: {sorted(OPENAI_TRANSCRIPTION_MODELS)}"
@@ -448,8 +336,35 @@ class OpenAIBackend(TranscriptionBackend):
             kwargs["prompt"] = context_info
 
         try:
+            input_size = format_bytes(audio_path.stat().st_size)
+        except OSError:
+            input_size = "unknown"
+        LOGGER.info(
+            "OpenAI request config: response_format=%s language=%s prompt=%s input_size=%s timeout=%ss progress_log_seconds=%s",
+            response_format,
+            language or "auto",
+            "yes" if "prompt" in kwargs else "no",
+            input_size,
+            timeout_seconds,
+            progress_log_seconds,
+        )
+
+        def _request() -> Any:
             with audio_path.open("rb") as handle:
-                response = client.audio.transcriptions.create(file=handle, **kwargs)
+                return client.audio.transcriptions.create(file=handle, **kwargs)
+
+        try:
+            with log_stage(LOGGER, "openai_transcription_request", model=self.model_name):
+                response = _run_with_progress(
+                    _request,
+                    activity="OpenAI transcription request",
+                    timeout_seconds=timeout_seconds,
+                    progress_log_seconds=progress_log_seconds,
+                )
+        except FutureTimeoutError as exc:
+            raise TranscriptionError(
+                "OpenAI transcription timed out. Increase --timeout-seconds or retry the request."
+            ) from exc
         except Exception as exc:
             raise TranscriptionError(f"OpenAI transcription failed: {exc}") from exc
 
@@ -461,6 +376,12 @@ class OpenAIBackend(TranscriptionBackend):
 
         if not text:
             text = combine_text_from_segments(segments)
+        LOGGER.info(
+            "OpenAI transcription finished: text_chars=%s segments=%s language=%s",
+            len(text),
+            len(segments),
+            data.get("language") or language or "unknown",
+        )
 
         return BackendResult(
             text=text,
@@ -471,12 +392,11 @@ class OpenAIBackend(TranscriptionBackend):
         )
 
 
-class WhisperBackend(TranscriptionBackend):
-    """Local open-source Whisper backend."""
+class MLXWhisperBackend(TranscriptionBackend):
+    """MLX-optimized Whisper backend for Apple Silicon."""
 
-    def __init__(self, model_name: str, device: str):
+    def __init__(self, model_name: str):
         self.model_name = model_name
-        self.requested_device = device
 
     def transcribe(
         self,
@@ -486,42 +406,54 @@ class WhisperBackend(TranscriptionBackend):
         timeout_seconds: int,
         generation: Mapping[str, Any],
     ) -> BackendResult:
-        del timeout_seconds
-        del generation
-
         try:
-            import torch
-            import whisper
+            import mlx_whisper
         except ModuleNotFoundError as exc:
             raise TranscriptionError(
-                "Whisper backend dependencies missing. Install requirements.txt first."
+                "mlx-whisper backend dependencies missing. "
+                "Install with: pip install mlx-whisper"
             ) from exc
 
-        device = _resolve_torch_device(torch, self.requested_device)
+        progress_log_seconds = max(1, int(generation.get("progress_log_seconds", 20)))
+        LOGGER.info(
+            "MLX Whisper transcription started: model=%s audio=%s",
+            self.model_name,
+            audio_path,
+        )
 
-        try:
-            model = whisper.load_model(self.model_name, device=device)
-        except Exception as exc:
-            raise TranscriptionError(
-                f"Failed to load Whisper model '{self.model_name}' on {device}: {exc}"
-            ) from exc
-
-        kwargs: Dict[str, Any] = {
-            "fp16": device == "cuda",
-            "verbose": False,
-        }
+        kwargs: Dict[str, Any] = {"path_or_hf_repo": self.model_name}
         if language:
             kwargs["language"] = language
         if context_info:
             kwargs["initial_prompt"] = context_info
 
+        def _transcribe() -> Any:
+            return mlx_whisper.transcribe(str(audio_path), **kwargs)
+
         try:
-            result = model.transcribe(str(audio_path), **kwargs)
+            result = _run_with_progress(
+                _transcribe,
+                activity="MLX Whisper transcription",
+                timeout_seconds=timeout_seconds,
+                progress_log_seconds=progress_log_seconds,
+            )
+        except FutureTimeoutError as exc:
+            raise TranscriptionError(
+                "MLX Whisper transcription timed out. Increase --timeout-seconds or use a smaller model."
+            ) from exc
+        except TranscriptionError:
+            raise
         except Exception as exc:
-            raise TranscriptionError(f"Whisper transcription failed: {exc}") from exc
+            raise TranscriptionError(f"MLX Whisper transcription failed: {exc}") from exc
 
         segments = normalize_whisper_segments(result.get("segments") or [])
         text = str(result.get("text") or "").strip() or combine_text_from_segments(segments)
+        LOGGER.info(
+            "MLX Whisper transcription finished: text_chars=%s segments=%s language=%s",
+            len(text),
+            len(segments),
+            result.get("language") or language or "unknown",
+        )
 
         return BackendResult(
             text=text,
@@ -537,12 +469,10 @@ class BackendFactory:
 
     @staticmethod
     def create(args: argparse.Namespace) -> TranscriptionBackend:
-        if args.backend == "vibevoice":
-            return VibeVoiceBackend(model_name=args.model, device=args.device)
+        if args.backend == "mlx-whisper":
+            return MLXWhisperBackend(model_name=args.model)
         if args.backend == "openai":
             return OpenAIBackend(model_name=args.model, base_url=args.openai_base_url)
-        if args.backend == "whisper":
-            return WhisperBackend(model_name=args.model, device=args.device)
         raise TranscriptionError(f"Unsupported backend: {args.backend}")
 
 
@@ -625,6 +555,18 @@ def run_selected_backend(
     timeout_seconds: int,
     generation: Mapping[str, Any],
 ) -> BackendResult:
+    try:
+        audio_size = format_bytes(audio_path.stat().st_size)
+    except OSError:
+        audio_size = "unknown"
+    LOGGER.info(
+        "Dispatching backend=%s audio=%s size=%s language=%s timeout=%ss",
+        backend_name,
+        audio_path,
+        audio_size,
+        language or "auto",
+        timeout_seconds,
+    )
     backend = backends[backend_name]
     return backend.transcribe(
         audio_path=audio_path,
@@ -680,6 +622,13 @@ def should_chunk_audio(
     return False
 
 
+def compute_effective_chunk_seconds(
+    *,
+    chunk_seconds: int,
+) -> int:
+    return max(1, chunk_seconds)
+
+
 def split_audio_into_chunks(
     *,
     input_audio: Path,
@@ -701,8 +650,16 @@ def split_audio_into_chunks(
         "copy",
         str(chunk_pattern),
     ]
+    LOGGER.info(
+        "Chunking audio: input=%s chunk_seconds=%s output_pattern=%s",
+        input_audio,
+        chunk_seconds,
+        chunk_pattern,
+    )
+    LOGGER.debug("Chunking command: %s", " ".join(shlex.quote(part) for part in command))
     try:
-        subprocess.run(command, check=True, capture_output=True, text=True)
+        with log_stage(LOGGER, "audio_chunking", chunk_seconds=chunk_seconds):
+            subprocess.run(command, check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError as exc:
         stderr = (exc.stderr or "").strip()
         raise TranscriptionError(
@@ -712,6 +669,7 @@ def split_audio_into_chunks(
     chunk_paths = sorted(chunks_dir.glob("chunk_*.wav"))
     if not chunk_paths:
         raise TranscriptionError("Chunking produced no files.")
+    LOGGER.info("Chunking completed: %s chunks generated.", len(chunk_paths))
     return chunk_paths
 
 
@@ -724,14 +682,34 @@ def transcribe_with_chunking(
     generation: Mapping[str, Any],
     temp_dir: Path,
 ) -> BackendResult:
-    if not should_chunk_audio(
+    effective_chunk_seconds = compute_effective_chunk_seconds(
+        chunk_seconds=args.chunk_seconds,
+    )
+    should_chunk = should_chunk_audio(
         chunk_mode=args.chunk_mode,
         backend=args.backend,
         duration_sec=normalized.duration_sec,
         audio_path=normalized.path,
         chunk_threshold_minutes=args.chunk_threshold_minutes,
         openai_max_file_mb=args.openai_max_file_mb,
-    ):
+    )
+
+    try:
+        normalized_size = format_bytes(normalized.path.stat().st_size)
+    except OSError:
+        normalized_size = "unknown"
+    LOGGER.info(
+        "Chunk decision: enabled=%s mode=%s duration_sec=%.2f threshold_min=%s effective_chunk_seconds=%s file_size=%s openai_max_file_mb=%s",
+        should_chunk,
+        args.chunk_mode,
+        normalized.duration_sec,
+        args.chunk_threshold_minutes,
+        effective_chunk_seconds,
+        normalized_size,
+        args.openai_max_file_mb,
+    )
+
+    if not should_chunk:
         return run_selected_backend(
             args.backend,
             {args.backend: backend},
@@ -745,13 +723,13 @@ def transcribe_with_chunking(
     LOGGER.info(
         "Long audio detected (%.2f min). Auto-chunking into %s-second segments.",
         normalized.duration_sec / 60 if normalized.duration_sec > 0 else 0.0,
-        args.chunk_seconds,
+        effective_chunk_seconds,
     )
 
     chunks_dir = temp_dir / "chunks"
     chunk_paths = split_audio_into_chunks(
         input_audio=normalized.path,
-        chunk_seconds=args.chunk_seconds,
+        chunk_seconds=effective_chunk_seconds,
         chunks_dir=chunks_dir,
     )
 
@@ -830,31 +808,11 @@ def transcribe_with_chunking(
             "chunking": {
                 "enabled": True,
                 "chunk_count": len(chunk_paths),
-                "chunk_seconds": args.chunk_seconds,
+                "chunk_seconds": effective_chunk_seconds,
                 "chunks": chunk_meta,
             }
         },
     )
-
-
-def normalize_vibevoice_segments(raw_segments: Sequence[Mapping[str, Any]]) -> List[Dict[str, Any]]:
-    normalized: List[Dict[str, Any]] = []
-    for seg in raw_segments:
-        text = str(seg.get("text") or "").strip()
-        if not text:
-            continue
-        start = _to_float(seg.get("start") or seg.get("start_time"))
-        end = _to_float(seg.get("end") or seg.get("end_time"))
-        speaker = seg.get("speaker") or seg.get("speaker_id")
-        normalized.append(
-            {
-                "start": start,
-                "end": end,
-                "speaker": str(speaker) if speaker is not None else None,
-                "text": text,
-            }
-        )
-    return normalized
 
 
 def normalize_openai_segments(raw_segments: Sequence[Mapping[str, Any]]) -> List[Dict[str, Any]]:
@@ -863,9 +821,9 @@ def normalize_openai_segments(raw_segments: Sequence[Mapping[str, Any]]) -> List
         text = str(seg.get("text") or "").strip()
         if not text:
             continue
-        start = _to_float(seg.get("start") or seg.get("start_time"))
-        end = _to_float(seg.get("end") or seg.get("end_time"))
-        speaker = seg.get("speaker") or seg.get("speaker_id")
+        start = _to_float(_first_not_none(seg.get("start"), seg.get("start_time")))
+        end = _to_float(_first_not_none(seg.get("end"), seg.get("end_time")))
+        speaker = _first_not_none(seg.get("speaker"), seg.get("speaker_id"))
         normalized.append(
             {
                 "start": start,
@@ -1014,15 +972,70 @@ def _to_float(value: Any) -> Optional[float]:
         return None
 
 
-def _resolve_torch_device(torch_module: Any, requested: str) -> str:
-    if requested != "auto":
-        return requested
-    if torch_module.cuda.is_available():
-        return "cuda"
-    mps_backend = getattr(torch_module.backends, "mps", None)
-    if mps_backend is not None and mps_backend.is_available():
-        return "mps"
-    return "cpu"
+def _first_not_none(*values: Any) -> Any:
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
+def _run_with_progress(
+    fn: Callable[[], Any],
+    *,
+    activity: str,
+    timeout_seconds: int,
+    progress_log_seconds: int,
+) -> Any:
+    result_holder: Dict[str, Any] = {}
+    error_holder: Dict[str, BaseException] = {}
+    done = threading.Event()
+
+    def _target() -> None:
+        try:
+            result_holder["value"] = fn()
+        except BaseException as exc:  # pragma: no cover - defensive passthrough
+            error_holder["error"] = exc
+        finally:
+            done.set()
+
+    worker = threading.Thread(
+        target=_target,
+        name=f"{_sanitize_filename(activity)}_worker",
+        daemon=True,
+    )
+    worker.start()
+
+    started_at = time.perf_counter()
+    heartbeat = max(1, int(progress_log_seconds))
+    timeout_limit = max(0, int(timeout_seconds))
+
+    while True:
+        elapsed = time.perf_counter() - started_at
+        wait_for = float(heartbeat)
+        if timeout_limit > 0:
+            remaining = timeout_limit - elapsed
+            if remaining <= 0:
+                raise FutureTimeoutError()
+            wait_for = min(wait_for, remaining)
+
+        if done.wait(timeout=wait_for):
+            break
+
+        elapsed = time.perf_counter() - started_at
+        if timeout_limit > 0:
+            LOGGER.info(
+                "%s still running... elapsed=%.1fs timeout=%ss remaining=%.1fs",
+                activity,
+                elapsed,
+                timeout_limit,
+                max(0.0, timeout_limit - elapsed),
+            )
+        else:
+            LOGGER.info("%s still running... elapsed=%.1fs", activity, elapsed)
+
+    if "error" in error_holder:
+        raise error_holder["error"]
+    return result_holder.get("value")
 
 
 def _sanitize_filename(value: str) -> str:
@@ -1118,15 +1131,15 @@ def _default_basename(source_name: str) -> str:
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Transcribe YouTube/local media using VibeVoice/OpenAI/Whisper backends"
+        description="Transcribe YouTube/local media using MLX-Whisper or OpenAI backends"
     )
     parser.add_argument("input", help="YouTube URL or local media file path")
 
     parser.add_argument(
         "--backend",
         choices=SUPPORTED_BACKENDS,
-        default="vibevoice",
-        help="Transcription backend (default: vibevoice)",
+        default="mlx-whisper",
+        help="Transcription backend (default: mlx-whisper)",
     )
     parser.add_argument("--model", help="Model name override for the selected backend")
     parser.add_argument(
@@ -1156,13 +1169,6 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--hotwords",
         help="Optional comma-separated hotwords (merged into context info).",
-    )
-
-    parser.add_argument(
-        "--device",
-        choices=("auto", "cpu", "mps", "cuda"),
-        default="auto",
-        help="Device hint for local backends (default: auto)",
     )
 
     parser.add_argument("--cookies", help="Path to YouTube cookies file")
@@ -1213,17 +1219,21 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Optional directory to persist generated chunk WAV files.",
     )
 
-    parser.add_argument("--max-new-tokens", type=int, default=512)
-    parser.add_argument("--temperature", type=float, default=0.0)
-    parser.add_argument("--top-p", type=float, default=1.0)
-    parser.add_argument("--do-sample", action="store_true")
-    parser.add_argument("--num-beams", type=int, default=1)
-    parser.add_argument("--repetition-penalty", type=float, default=1.0)
-
     parser.add_argument(
         "--log-level",
         default=os.getenv("TRANSCRIBE_LOG_LEVEL", "INFO"),
         choices=("DEBUG", "INFO", "WARNING", "ERROR"),
+    )
+    parser.add_argument(
+        "--log-file",
+        default=os.getenv("TRANSCRIBE_LOG_FILE"),
+        help="Optional file path for persistent logs.",
+    )
+    parser.add_argument(
+        "--progress-log-seconds",
+        type=int,
+        default=int(os.getenv("TRANSCRIBE_PROGRESS_LOG_SECONDS", "20")),
+        help="Emit periodic progress logs every N seconds during long backend operations.",
     )
 
     return parser.parse_args(argv)
@@ -1233,14 +1243,28 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     load_dotenv()
     args = parse_args(argv)
 
-    logging.basicConfig(
-        level=getattr(logging, args.log_level.upper(), logging.INFO),
-        format="%(levelname)s: %(message)s",
-    )
+    configure_logging(args.log_level, args.log_file)
 
     try:
+        if args.progress_log_seconds <= 0:
+            raise TranscriptionError("--progress-log-seconds must be greater than 0.")
+
         args.model = args.model or DEFAULT_MODELS[args.backend]
         output_formats = parse_output_formats(args.output_formats)
+
+        LOGGER.info(
+            "Run configuration: backend=%s model=%s input=%s language=%s outputs=%s chunk_mode=%s timeout=%ss progress_log_seconds=%s",
+            args.backend,
+            args.model,
+            args.input,
+            args.language or "auto",
+            ",".join(output_formats),
+            args.chunk_mode,
+            args.timeout_seconds,
+            args.progress_log_seconds,
+        )
+        if args.log_file:
+            LOGGER.info("Persistent log file enabled: %s", args.log_file)
 
         if args.backend == "openai":
             validate_openai_output_constraints(args.model, output_formats)
@@ -1248,12 +1272,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         context_info = build_context_info(args.context_info, args.hotwords)
 
         generation = {
-            "max_new_tokens": args.max_new_tokens,
-            "temperature": args.temperature,
-            "top_p": args.top_p,
-            "do_sample": args.do_sample,
-            "num_beams": args.num_beams,
-            "repetition_penalty": args.repetition_penalty,
+            "progress_log_seconds": args.progress_log_seconds,
         }
         if args.chunk_seconds <= 0:
             raise TranscriptionError("--chunk-seconds must be greater than 0.")
@@ -1262,10 +1281,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if args.openai_max_file_mb <= 0:
             raise TranscriptionError("--openai-max-file-mb must be greater than 0.")
 
-        request = InputResolver.resolve(args.input)
+        with log_stage(LOGGER, "resolve_input"):
+            request = InputResolver.resolve(args.input)
 
         with tempfile.TemporaryDirectory(prefix="transcribe_pipeline_") as temp_dir_name:
             temp_dir = Path(temp_dir_name)
+            LOGGER.info("Temporary workspace created: %s", temp_dir)
 
             if request.is_youtube:
                 LOGGER.info("Resolving YouTube input...")
@@ -1287,16 +1308,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
             LOGGER.info("Normalizing media for backend '%s'...", args.backend)
             normalized = AudioNormalizer().normalize(media.local_path, args.backend, temp_dir)
+            LOGGER.info("Media summary: source=%s duration_sec=%.2f", media.source, normalized.duration_sec)
 
             backend = BackendFactory.create(args)
-            backend_result = transcribe_with_chunking(
-                args=args,
-                backend=backend,
-                normalized=normalized,
-                context_info=context_info,
-                generation=generation,
-                temp_dir=temp_dir,
-            )
+            with log_stage(LOGGER, "backend_transcription", backend=args.backend, model=args.model):
+                backend_result = transcribe_with_chunking(
+                    args=args,
+                    backend=backend,
+                    normalized=normalized,
+                    context_info=context_info,
+                    generation=generation,
+                    temp_dir=temp_dir,
+                )
             if not has_transcription_content(backend_result):
                 raise TranscriptionError(
                     "Transcription produced no text content. "
@@ -1329,12 +1352,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             output_dir = Path(args.output_dir).expanduser().resolve()
             basename = _sanitize_filename(args.output_basename) if args.output_basename else _default_basename(media.source_name)
 
-            written = OutputWriter.write(
-                payload=schema,
-                output_formats=output_formats,
-                output_dir=output_dir,
-                output_basename=basename,
-            )
+            with log_stage(LOGGER, "write_outputs", output_dir=output_dir, basename=basename):
+                written = OutputWriter.write(
+                    payload=schema,
+                    output_formats=output_formats,
+                    output_dir=output_dir,
+                    output_basename=basename,
+                )
 
             LOGGER.info("Transcription completed successfully.")
             for fmt, path in written.items():
