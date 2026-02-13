@@ -1,0 +1,3 @@
+# Optional heavy stack for VibeVoice-ASR backend.
+# Recommended runtime: Python 3.11 + CUDA-capable NVIDIA GPU.
+vibevoice @ git+https://github.com/microsoft/VibeVoice.git
