@@ -32,10 +32,31 @@ Requires `ffmpeg` and `ffprobe` in PATH.
 
 ## Architecture
 
-All production code lives in two files at the project root:
+Production code lives in the `transcribe/` package with a thin shim at the root:
 
-- **`transcribe_youtube.py`** — the entire pipeline: CLI parsing, input resolution, download, audio normalization, backend transcription, chunking, and output writing. Key classes follow a linear pipeline: `InputResolver` -> `MediaDownloader` -> `AudioNormalizer` -> `BackendFactory`/`TranscriptionBackend` -> `OutputWriter`. Data flows through dataclasses: `SourceRequest` -> `SourceMedia` -> `NormalizedMedia` -> `BackendResult`.
+- **`transcribe_youtube.py`** — thin shim (`from transcribe import *`) that preserves backward-compatible imports and the `python transcribe_youtube.py` CLI entry point.
 - **`logger_utils.py`** — centralized logging config, `log_stage()` context manager for timing pipeline stages, `format_bytes()` helper.
+
+### Package layout (`transcribe/`)
+
+```
+transcribe/
+├── __init__.py      # Re-exports full public API for backward compat
+├── models.py        # Dataclasses (SourceRequest, SourceMedia, NormalizedMedia, BackendResult) + exceptions
+├── constants.py     # SUPPORTED_BACKENDS, DEFAULT_MODELS, OPENAI_* sets
+├── utils.py         # _to_float, _first_not_none, _sanitize_filename, _run_with_progress, _probe_duration_seconds, etc.
+├── resolver.py      # InputResolver
+├── downloader.py    # MediaDownloader
+├── normalizer.py    # AudioNormalizer
+├── backends.py      # TranscriptionBackend, OpenAIBackend, MLXWhisperBackend, BackendFactory + segment normalizers
+├── chunking.py      # should_chunk_audio, split_audio_into_chunks, offset_segments, transcribe_with_chunking, run_selected_backend
+├── output.py        # OutputWriter, format_srt_timestamp, _render_txt, _render_srt, _build_schema
+└── cli.py           # parse_args, main, build_context_info, validate_openai_output_constraints, parse_output_formats, has_transcription_content
+```
+
+Key classes follow a linear pipeline: `InputResolver` -> `MediaDownloader` -> `AudioNormalizer` -> `BackendFactory`/`TranscriptionBackend` -> `OutputWriter`. Data flows through dataclasses: `SourceRequest` -> `SourceMedia` -> `NormalizedMedia` -> `BackendResult`.
+
+Dependency graph (no cycles): `models/constants` <- `utils` <- `resolver/downloader/normalizer` <- `backends` <- `chunking` <- `output` <- `cli`.
 
 ### Backend Design
 
