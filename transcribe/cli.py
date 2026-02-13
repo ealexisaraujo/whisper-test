@@ -24,9 +24,9 @@ from .models import (
     TranscriptionError,
 )
 from .normalizer import AudioNormalizer
+from .downloader import _sanitize_filename
 from .output import OutputWriter
 from .resolver import InputResolver
-from .utils import _sanitize_filename
 
 try:
     from dotenv import load_dotenv

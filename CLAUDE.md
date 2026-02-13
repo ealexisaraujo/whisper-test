@@ -44,19 +44,18 @@ transcribe/
 ├── __init__.py      # Re-exports full public API for backward compat
 ├── models.py        # Dataclasses (SourceRequest, SourceMedia, NormalizedMedia, BackendResult) + exceptions
 ├── constants.py     # SUPPORTED_BACKENDS, DEFAULT_MODELS, OPENAI_* sets
-├── utils.py         # _to_float, _first_not_none, _sanitize_filename, _run_with_progress, _probe_duration_seconds, etc.
-├── resolver.py      # InputResolver
-├── downloader.py    # MediaDownloader
-├── normalizer.py    # AudioNormalizer
-├── backends.py      # TranscriptionBackend, OpenAIBackend, MLXWhisperBackend, BackendFactory + segment normalizers
+├── resolver.py      # InputResolver + _normalize_input_source
+├── downloader.py    # MediaDownloader + _sanitize_filename, _extract_youtube_id
+├── normalizer.py    # AudioNormalizer + _probe_duration_seconds
+├── backends.py      # TranscriptionBackend, OpenAIBackend, MLXWhisperBackend, BackendFactory + segment normalizers + _run_with_progress, _to_float
 ├── chunking.py      # should_chunk_audio, split_audio_into_chunks, offset_segments, transcribe_with_chunking, run_selected_backend
-├── output.py        # OutputWriter, format_srt_timestamp, _render_txt, _render_srt, _build_schema
-└── cli.py           # parse_args, main, build_context_info, validate_openai_output_constraints, parse_output_formats, has_transcription_content
+├── output.py        # OutputWriter, format_srt_timestamp, _render_txt, _render_srt
+└── cli.py           # parse_args, main, build_context_info, validate_openai_output_constraints, parse_output_formats, has_transcription_content, _build_schema
 ```
 
 Key classes follow a linear pipeline: `InputResolver` -> `MediaDownloader` -> `AudioNormalizer` -> `BackendFactory`/`TranscriptionBackend` -> `OutputWriter`. Data flows through dataclasses: `SourceRequest` -> `SourceMedia` -> `NormalizedMedia` -> `BackendResult`.
 
-Dependency graph (no cycles): `models/constants` <- `utils` <- `resolver/downloader/normalizer` <- `backends` <- `chunking` <- `output` <- `cli`.
+Dependency graph (no cycles): `models/constants` <- `resolver/downloader/normalizer` <- `backends` <- `chunking` <- `output` <- `cli`.
 
 ### Backend Design
 

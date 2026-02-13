@@ -1,0 +1,775 @@
+1
+00:00:00,000 --> 00:00:04,760
+Hey, I'm Caleb, and in this video, I'll show you the best and easiest way to set up OpenClaw
+
+2
+00:00:04,760 --> 00:00:10,140
+and build your own AI assistant. What makes OpenClaw different is simple. Tools like ChatGPT
+
+3
+00:00:10,140 --> 00:00:14,820
+are places you go to. You open a tab, ask a question, get an answer, and you're done.
+
+4
+00:00:15,180 --> 00:00:19,840
+But OpenClaw can actually live inside apps you already use and keep working in the background,
+
+5
+00:00:20,060 --> 00:00:24,820
+running on a schedule, and handling tasks without you constantly checking in. I'm going to show you
+
+6
+00:00:24,820 --> 00:00:29,600
+the easiest way to set this up step-by-step with no code, and we'll connect it to things like
+
+7
+00:00:29,600 --> 00:00:34,180
+Telegram and Google Workspace so you can start building automations right away. And by the end
+
+8
+00:00:34,180 --> 00:00:38,420
+of this video, you'll have an assistant you can text from your phone that remembers everything you
+
+9
+00:00:38,420 --> 00:00:44,660
+tell it and runs 24-7. But first, we'll need a place to run OpenClaw, and technically, this can be any
+
+10
+00:00:44,660 --> 00:00:50,380
+machine you own. It could be a spare laptop, a desktop PC, or even a little home server. All of
+
+11
+00:00:50,380 --> 00:00:55,620
+that could work. But here's the catch. If you want OpenClaw to actually be useful, it needs to be online
+
+12
+00:00:55,620 --> 00:01:00,200
+whenever you need it. Because the second your computer goes to sleep, restarts, or your internet
+
+13
+00:01:00,200 --> 00:01:05,100
+cuts out, your assistant is basically gone. So yes, you can run this at home, but then you're
+
+14
+00:01:05,100 --> 00:01:09,500
+dealing with keeping a machine on 24-7, port forwarding, and hoping your internet doesn't
+
+15
+00:01:09,500 --> 00:01:14,080
+randomly break the setup. And also, think about security. When you run this on your personal
+
+16
+00:01:14,080 --> 00:01:19,480
+computer, you're mixing an always-on assistant with your everyday files and accounts. We need
+
+17
+00:01:19,480 --> 00:01:24,080
+something that keeps OpenClaw isolated on its own machine, separate from your personal device.
+
+18
+00:01:24,080 --> 00:01:30,080
+So that's why we're going to keep things safe and simple by using a VPS. A VPS is basically a
+
+19
+00:01:30,080 --> 00:01:34,900
+computer in the cloud that stays online all the time, and you can access it from anywhere. That
+
+20
+00:01:34,900 --> 00:01:39,180
+way, with this setup, OpenClaw will always be running, and once you get it set up, you won't
+
+21
+00:01:39,180 --> 00:01:44,160
+have to worry about it again. Now, there are a lot of VPS options out there, but for OpenClaw,
+
+22
+00:01:44,300 --> 00:01:49,420
+I recommend Hostinger. It's one of the best values for this kind of setup. The KVM plans have plenty
+
+23
+00:01:49,420 --> 00:01:54,060
+of resources to run OpenClaw reliably, and you're also getting a VPS you can use for other
+
+24
+00:01:54,080 --> 00:01:58,720
+projects later. Plus, Hostinger makes this very beginner-friendly with a one-click OpenClaw
+
+25
+00:01:58,720 --> 00:02:03,200
+deploy, so you don't have to manually install everything from scratch. And to get the best
+
+26
+00:02:03,200 --> 00:02:08,120
+available deal on Hostinger's VPS plans, make sure you sign up using the first link in the video
+
+27
+00:02:08,120 --> 00:02:13,460
+description. That link automatically applies our exclusive discount, giving you an extra 10% off.
+
+28
+00:02:14,260 --> 00:02:18,320
+And once you go to that link, you'll be brought to this page right here. As you can see, we're going
+
+29
+00:02:18,320 --> 00:02:23,160
+to auto-deploy with OpenClaw already installed for us, which is great. And over here on the right
+
+30
+00:02:23,160 --> 00:02:27,720
+side, you can select your VPS plan. By default, it's going to be set to KVM2, which is going to give
+
+31
+00:02:27,720 --> 00:02:34,180
+you plenty of resources for running OpenClaw. You'll get two virtual CPU cores, 8GB of RAM, 100GB of NVMe
+
+32
+00:02:34,180 --> 00:02:39,160
+disk space, and 8TB of bandwidth. If you want to check out the other plans, you can select it up here
+
+33
+00:02:39,160 --> 00:02:45,040
+and switch between them. But for this video, I'm just going to go with KVM2. Go down here and click
+
+34
+00:02:45,040 --> 00:02:53,300
+on Deploy. And then here on the left-hand side, you can choose your billing period. By default,
+
+35
+00:02:53,380 --> 00:02:57,980
+it's going to be set to 24 months. That's going to give you the biggest savings, a free domain for
+
+36
+00:02:57,980 --> 00:03:02,700
+the first year, and two extra months of free hosting. However, you can switch it from 24 months
+
+37
+00:03:02,700 --> 00:03:08,200
+to 12-month and one-month plans as well. At the very least, I'd recommend going with the 12-month plan.
+
+38
+00:03:09,160 --> 00:03:12,920
+That's still going to get you plenty of savings and also a free domain for the first year.
+
+39
+00:03:13,340 --> 00:03:16,900
+Scrolling down, we can see that we're going to auto-deploy with OpenClaw. You can choose
+
+40
+00:03:16,900 --> 00:03:21,280
+if you want to toggle on daily auto-backups. That's going to run you an extra $6 per month
+
+41
+00:03:21,280 --> 00:03:25,800
+extra. Then go down here and confirm your server location. This should be the server location
+
+42
+00:03:25,800 --> 00:03:30,300
+that's closest to you or your audience. It's going to suggest the best option for you based
+
+43
+00:03:30,300 --> 00:03:34,180
+on your IP address, and for me, that's going to be the US. So I'll leave this as default.
+
+44
+00:03:34,500 --> 00:03:38,760
+Now let's go up, and we're going to make sure that the coupon here is applied. By using the first
+
+45
+00:03:38,760 --> 00:03:42,940
+link in the video description, this should optimize your savings and auto-apply this coupon here.
+
+46
+00:03:43,220 --> 00:03:48,680
+All right, with that done, let's click on Continue to move on. On this screen here, you're going to
+
+47
+00:03:48,680 --> 00:03:53,020
+want to register for a Hostinger account. So go ahead and enter your email address right here
+
+48
+00:03:53,020 --> 00:03:56,700
+and create a password. Let's go down and click on Register.
+
+49
+00:03:59,080 --> 00:04:03,400
+And then here, you just need to enter your billing address and payment information. I'm going to go
+
+50
+00:04:03,400 --> 00:04:07,580
+ahead and fill this out real quick. Awesome. Now on this screen, once you've filled out everything,
+
+51
+00:04:07,580 --> 00:04:09,580
+go ahead and click on Submit Payment.
+
+52
+00:04:13,500 --> 00:04:15,440
+And then here, click on Get Started.
+
+53
+00:04:19,040 --> 00:04:24,220
+First, you'll want to copy and save your OpenClaw gateway token. Make sure you treat this like a
+
+54
+00:04:24,220 --> 00:04:28,900
+password. Don't share it with anyone, and if it gets exposed, you'll want to regenerate and redeploy.
+
+55
+00:04:29,220 --> 00:04:32,220
+So I'm going to copy this, and I'm going to save it somewhere safe.
+
+56
+00:04:32,220 --> 00:04:39,640
+And next, you're going to see a few fields here. You have the Anthropic API key, the OpenAI API key,
+
+57
+00:04:39,640 --> 00:04:44,560
+and a WhatsApp number field. If you plan on using WhatsApp, go ahead and put your phone number here.
+
+58
+00:04:44,940 --> 00:04:49,720
+But for this video, we're really just concerned about the OpenAI and Anthropic API keys.
+
+59
+00:04:49,980 --> 00:04:54,220
+So you're going to find two links in the video description. The first one is going to be the
+
+60
+00:04:54,220 --> 00:05:01,100
+OpenAI API keys. And then the other link will take you to Claude or Anthropics. And make sure billing is
+
+61
+00:05:01,100 --> 00:05:05,580
+enabled on both of these platforms, or else this isn't going to work. It's important to note that
+
+62
+00:05:05,580 --> 00:05:12,140
+OpenClaw itself is free, but the part that costs money here is the AI model, like using OpenAI or Claude,
+
+63
+00:05:12,380 --> 00:05:18,380
+because these are usage-based, meaning you pay per request or message. So start with normal usage,
+
+64
+00:05:18,380 --> 00:05:22,780
+keep an eye on your usage dashboard, and just remember that the more powerful models that you choose
+
+65
+00:05:22,780 --> 00:05:28,940
+usually give better results, but they also cost more. So I'm going to start with OpenAI. I'm going to go to the top right,
+
+66
+00:05:28,940 --> 00:05:36,860
+click on Create New Secret Key. I'll give it a name, just name this OpenClaw. You can set your project
+
+67
+00:05:36,860 --> 00:05:45,980
+and permissions, then click on Create Secret Key. I'm going to click on Copy. Then I'll go back to
+
+68
+00:05:45,980 --> 00:05:53,020
+Hostinger. I'm going to paste it into the OpenAI API key slot here. Again, make sure you don't share this
+
+69
+00:05:53,020 --> 00:05:58,460
+with anybody. Now let's do the same thing for Anthropic. If you don't want to set up both, you don't have to,
+
+70
+00:05:58,460 --> 00:06:02,860
+but in this video, I'm going to go ahead and set up both. So that way you can switch between models anytime.
+
+71
+00:06:02,860 --> 00:06:09,420
+And depending on what you're doing, one might be cheaper or a better fit than the other. So having both gives you the flexibility to choose.
+
+72
+00:06:09,420 --> 00:06:14,620
+So I'm going to go back up to the Anthropic API dashboard, click on Get API Key.
+
+73
+00:06:15,820 --> 00:06:21,260
+And again, I'm going to name this one OpenClaw and click on Create API Key.
+
+74
+00:06:21,260 --> 00:06:30,300
+I'm going to copy this here, go back to Hostinger and paste it in right here.
+
+75
+00:06:31,180 --> 00:06:35,500
+Okay. So once you have your API keys filled out, go down and click on Deploy.
+
+76
+00:06:38,220 --> 00:06:42,780
+Okay. And after you deploy, you're going to see this message here that says your project is being deployed.
+
+77
+00:06:42,780 --> 00:06:46,700
+This can take a few minutes to complete. So I'm going to fast forward to whenever it's done.
+
+78
+00:06:46,700 --> 00:06:54,140
+Okay. And as you can see here, it's changed from created to running. This is exactly what we want to see.
+
+79
+00:06:54,140 --> 00:06:58,300
+To open up your OpenClaw dashboard, go down here and click on this link.
+
+80
+00:07:00,780 --> 00:07:05,900
+And right away, you're going to see disconnected from gateway. In order to fix this, go to overview.
+
+81
+00:07:07,580 --> 00:07:12,860
+And then on gateway token, you're going to paste in your OpenClaw gateway token that we copied and saved
+
+82
+00:07:12,860 --> 00:07:20,300
+earlier. So go ahead and paste this in right here. Go down and click on Connect. And on the right side,
+
+83
+00:07:20,300 --> 00:07:24,540
+you'll see the status change to connected. Now let's go back up to the chat here.
+
+84
+00:07:26,300 --> 00:07:31,180
+And let's type in a quick message to see if everything's working. I'll just ask if everything
+
+85
+00:07:31,180 --> 00:07:36,300
+is working properly. I'm going to send the message and then we'll see the response come in right here.
+
+86
+00:07:36,300 --> 00:07:44,300
+And then here we go. We can see that everything is now working properly. Okay. Now the next thing
+
+87
+00:07:44,300 --> 00:07:49,660
+we'll do here is set up a chatting app like Telegram. Now, if you're wanting to use WhatsApp, Slack,
+
+88
+00:07:49,660 --> 00:07:54,380
+or Discord, you can ask your AI assistant how to do this, and it's going to walk you through the steps.
+
+89
+00:07:54,380 --> 00:07:58,860
+But the most popular platform people use for this is Telegram. The reason for that is because you're
+
+90
+00:07:58,860 --> 00:08:04,140
+able to easily set up bots and connect tokens. And right now I'll show you how easy this actually is.
+
+91
+00:08:04,140 --> 00:08:10,380
+So go ahead and start sending a message to your assistant. I'll say, let's set up Telegram.
+
+92
+00:08:10,940 --> 00:08:15,820
+Send a message. And it's going to come back and tell us the steps that we need to do next.
+
+93
+00:08:16,780 --> 00:08:19,980
+So it's going to tell us a bunch of stuff here, but the main thing we want to look at here is the
+
+94
+00:08:19,980 --> 00:08:24,300
+first step, which is creating a bot with a bot father. So if you check the description,
+
+95
+00:08:24,300 --> 00:08:28,700
+you're going to find a Telegram link that's going to bring you to the bot father Telegram bot.
+
+96
+00:08:28,700 --> 00:08:32,700
+And all you want to do there is open up that link and it's going to launch a conversation with a bot
+
+97
+00:08:32,700 --> 00:08:36,780
+father. And when you launch that conversation, it's going to look something like this.
+
+98
+00:08:36,780 --> 00:08:43,340
+When you're here, go ahead and type slash new bot and then send that message.
+
+99
+00:08:44,220 --> 00:08:46,940
+And the first thing we'll need to do is give it a name. I'll just name this
+
+100
+00:08:47,580 --> 00:08:52,780
+open claw tutorial and then one, two, three. Press enter.
+
+101
+00:08:53,500 --> 00:08:58,540
+Next, we need to choose a username for the bot. And when you do this, it has to end in the word bot.
+
+102
+00:08:58,540 --> 00:09:06,140
+So for example, open claw tutorial, one, two, three, bot. And we'll see if that's available.
+
+103
+00:09:07,820 --> 00:09:12,540
+And there we go. We've just created a new bot. And then down here, you'll find your bot token.
+
+104
+00:09:12,540 --> 00:09:17,900
+Again, make sure you don't share this with anybody. I'm going to go ahead and copy this token. And then
+
+105
+00:09:17,900 --> 00:09:22,780
+back over here in my open claw dashboard, I'm simply going to send this as a message.
+
+106
+00:09:22,780 --> 00:09:31,260
+Next, it needs your chat ID to obtain this. Go ahead and go back to bot father. And you're going to find
+
+107
+00:09:31,260 --> 00:09:35,340
+this link right here. That's going to open up a conversation with the bot you just created.
+
+108
+00:09:35,340 --> 00:09:39,260
+So I'm going to click on it. I'm going to go down and press start.
+
+109
+00:09:41,900 --> 00:09:46,300
+Okay. So once you get to the step right here, you may be asked for a pairing code,
+
+110
+00:09:46,300 --> 00:09:51,580
+but in this case, it's asking for our telegram chat ID. I've set up a few assistants with this
+
+111
+00:09:51,580 --> 00:09:56,380
+method and it seems to always change. So in this case, I'm being asked for my chat ID.
+
+112
+00:09:56,380 --> 00:09:59,980
+If you go ahead and check in the description, you're going to find another telegram link.
+
+113
+00:09:59,980 --> 00:10:04,700
+That's going to get you access to the user info bot. And then whenever you launch a conversation with it,
+
+114
+00:10:04,700 --> 00:10:10,540
+it's going to give you your telegram user ID right here. Now, all you have to do is just copy this
+
+115
+00:10:11,420 --> 00:10:15,980
+and paste it in here as a message. And then whenever you send this here in open claw,
+
+116
+00:10:15,980 --> 00:10:20,380
+it's going to get everything configured for you. And there we go. As we can see,
+
+117
+00:10:20,380 --> 00:10:25,580
+it says that telegram is configured and the gateway is restarting and that our bot is now ready.
+
+118
+00:10:25,580 --> 00:10:29,580
+Now it says to open telegram and try sending a message to the bot. So I'm going to switch back
+
+119
+00:10:29,580 --> 00:10:36,940
+over to my conversation here. And then I'm going to say, is this thing working? I'll send a message.
+
+120
+00:10:36,940 --> 00:10:41,580
+Now you'll see the bot is typing and let's see if it works.
+
+121
+00:10:45,340 --> 00:10:48,620
+And there we go. It says it's working. Hey Caleb, first message through telegram.
+
+122
+00:10:48,620 --> 00:10:52,220
+We're officially connected. The next thing I want to ask is what model it's using.
+
+123
+00:10:53,580 --> 00:10:57,660
+Because if you remember earlier, we created a key for open AI and Anthropic.
+
+124
+00:10:57,660 --> 00:11:00,300
+So we want to confirm which model we're currently using.
+
+125
+00:11:00,300 --> 00:11:09,180
+And right now we can see it's using Claude Opus 4.5. And we also have GPT 4.0 as an option.
+
+126
+00:11:09,180 --> 00:11:13,180
+And if you ever want to change your model, just tell your AI assistant that's what you want to do.
+
+127
+00:11:13,180 --> 00:11:17,420
+And it's going to rewrite the code on the backend to configure itself for the model that you actually
+
+128
+00:11:17,420 --> 00:11:23,180
+want. Okay. And with telegram set up, we're able to communicate with our AI assistant through telegram
+
+129
+00:11:23,180 --> 00:11:29,020
+on desktop and on our mobile devices. Next, let's talk about skills. With open claw, you can install
+
+130
+00:11:29,020 --> 00:11:34,220
+skills to expand what your assistant is able to do. And to find skills, you have two easy options.
+
+131
+00:11:34,220 --> 00:11:39,500
+Your first option is Claw Hub. You'll find a link to this in the video description as well.
+
+132
+00:11:39,500 --> 00:11:44,380
+Here you can publish skills and browse skills that are available. And you can also install skills
+
+133
+00:11:44,380 --> 00:11:49,660
+through the public skills directory on GitHub. This link is also available in the video description.
+
+134
+00:11:49,660 --> 00:11:54,780
+And here's how you install skills super easily. Scrolling through here, we have a bunch of different
+
+135
+00:11:54,780 --> 00:11:58,700
+stuff here that we can see. But the first skill that I would start with is the Google
+
+136
+00:11:58,700 --> 00:12:05,820
+workspace skill. So if I do control F on my keyboard or command F on Mac, I'm going to type in GOG.
+
+137
+00:12:06,540 --> 00:12:11,820
+And I'm going to go down to the second one here. And here you'll find a Google workspace CLI. This will
+
+138
+00:12:11,820 --> 00:12:17,740
+allow you to connect Gmail, calendar, drive, contacts, and sheets, which for an AI assistant will be really
+
+139
+00:12:17,740 --> 00:12:21,180
+helpful for it to have access to. So if I click on this skill here,
+
+140
+00:12:21,180 --> 00:12:27,740
+I'm going to click on the next one here. And then I copy the GitHub link. From there, I can go back into
+
+141
+00:12:27,740 --> 00:12:35,660
+Telegram. And then I can write a message to my bot that says, install this skill. And then I'm going to
+
+142
+00:12:35,660 --> 00:12:40,220
+paste that GitHub link in right here. And then whenever I send this message, it's going to attempt to
+
+143
+00:12:40,220 --> 00:12:45,100
+install this skill. And if it needs any input from me, it's going to let me know what to do next and help
+
+144
+00:12:45,100 --> 00:12:49,820
+me troubleshoot and get it set up properly. Also, here's a quick heads up because the Google workspace
+
+145
+00:12:49,820 --> 00:12:54,700
+skill is a really good example of this. If you try installing this and it shows as blocked with an
+
+146
+00:12:54,700 --> 00:13:00,540
+error like brew not installed, that just means that this skill needs an extra dependency in order to
+
+147
+00:13:00,540 --> 00:13:05,580
+run. And since we deployed OpenClaw through Hostinger, you'll handle all of that from your VPS.
+
+148
+00:13:05,580 --> 00:13:11,340
+So if I navigate back to my browser here, and then I go back up to Hostinger and go to my Docker
+
+149
+00:13:11,340 --> 00:13:18,060
+Manager. If I need to install extra dependencies, I'll do so here in my Docker Manager. And if you
+
+150
+00:13:18,060 --> 00:13:22,940
+need to communicate with your VPS directly, you can use your built-in terminal. You'll just install
+
+151
+00:13:22,940 --> 00:13:27,580
+what the skill is missing, refresh, and it should unlock. And of course, if you get stuck, just try
+
+152
+00:13:27,580 --> 00:13:31,340
+asking your assistant what it needs you to do and follow the prompts. If you tell it that you're
+
+153
+00:13:31,340 --> 00:13:35,900
+running OpenClaw on Hostinger and describe your exact setup, it's usually going to help you
+
+154
+00:13:35,900 --> 00:13:40,700
+really quickly. Let me also show you how to set up recurring actions your AI assistant can run
+
+155
+00:13:40,700 --> 00:13:46,140
+automatically by using something called Cron Jobs. Let's go back to the OpenClaw control panel.
+
+156
+00:13:47,260 --> 00:13:54,300
+And then on the left hand side, go into Cron Jobs. And on this screen, you'll have two main boxes.
+
+157
+00:13:54,300 --> 00:13:59,980
+On the left, this box is just the status. You'll see if the scheduler is enabled, how many jobs you
+
+158
+00:13:59,980 --> 00:14:05,500
+have, and the next time it's going to wake up. And on the right is where you create a job. Let's start by
+
+159
+00:14:05,500 --> 00:14:13,820
+giving our job a name. I'll name this Summarize Emails and Meetings. You can add a description if
+
+160
+00:14:13,820 --> 00:14:20,300
+you want to. Next, let's go down to the schedule. Right now, it's set for every 30 minutes. So for
+
+161
+00:14:20,300 --> 00:14:29,580
+example, I could change this to one, and then from minutes to days. And lastly, we need to tell the AI
+
+162
+00:14:29,580 --> 00:14:36,460
+what this job is. That's what you put into the system text box here. So I'll type, check my Gmail
+
+163
+00:14:36,460 --> 00:14:47,820
+and Google Calendar. Summarize anything important since the last run. Then send me a short update on
+
+164
+00:14:47,820 --> 00:14:54,220
+Telegram. So now with this job, for every single day, it's going to summarize my Gmail and Google
+
+165
+00:14:54,220 --> 00:14:59,020
+Calendar. And that's going to send me a message on Telegram with anything important. Once you're happy with
+
+166
+00:14:59,020 --> 00:15:05,180
+this, just click on Add Job. And then you'll see that new job down here. And that's it. Your
+
+167
+00:15:05,180 --> 00:15:09,740
+assistant is now going to run this job automatically on the schedule that you chose. And once you get the
+
+168
+00:15:09,740 --> 00:15:14,220
+hang of this, you can schedule basically anything. If it's a task that you want your assistant to
+
+169
+00:15:14,220 --> 00:15:19,180
+handle automatically, just turn it into a job here. Now let's talk about managing your deployments
+
+170
+00:15:19,180 --> 00:15:26,780
+and your VPS. Let's go back to the Hostinger Docker Manager tab. And this is basically your control panel.
+
+171
+00:15:26,780 --> 00:15:33,340
+Anytime you need to restart OpenClaw, redeploy it, swap API keys or environment variables, or manage other
+
+172
+00:15:33,340 --> 00:15:38,220
+containers later, you're going to do it here. And once everything is set up with OpenClaw, Hostinger is
+
+173
+00:15:38,220 --> 00:15:43,340
+where you manage the VPS itself. You'll find your miscellaneous settings here. If you want to change out
+
+174
+00:15:43,340 --> 00:15:50,060
+your OS and control panel, configure backups and monitoring, set up security, or connect a domain later.
+
+175
+00:15:50,060 --> 00:15:54,780
+And as I mentioned before, you have access to a built-in terminal here in the top right. And that's how you're going to
+
+176
+00:15:54,780 --> 00:16:01,180
+communicate with your VPS directly. Okay, we're almost done. However, please do keep in mind that
+
+177
+00:16:01,180 --> 00:16:07,100
+OpenClaw is still an experimental tool. It's powerful, but once it has access to things like your emails,
+
+178
+00:16:07,100 --> 00:16:11,660
+calendar, and files, you want to be smart about security, especially if you're letting it run on
+
+179
+00:16:11,660 --> 00:16:17,900
+its own. So right after this video, I do these four things to keep you, your assistant, and your data safe.
+
+180
+00:16:17,900 --> 00:16:23,660
+First, make sure backups are turned on in Hostinger. In Hpanel, you can enable automatic backups,
+
+181
+00:16:23,660 --> 00:16:28,940
+and by default, it's often set to weekly. If you can, upgrade that to daily backups so you can
+
+182
+00:16:28,940 --> 00:16:34,780
+recover your data quickly just in case anything breaks. Second, lock down your dashboard access.
+
+183
+00:16:34,780 --> 00:16:39,660
+Basically, don't leave your OpenClaw dashboard sitting on a public link that anyone can hit.
+
+184
+00:16:39,660 --> 00:16:44,380
+At a minimum, use a strong password, and if you have the option, restrict access so only you can
+
+185
+00:16:44,380 --> 00:16:50,300
+reach it, like limiting it to your IP or putting it behind a private tunnel or VPN. Third, use a security
+
+186
+00:16:50,300 --> 00:16:55,340
+certificate if you add a domain. This isn't required, but it is a good upgrade. Having a security
+
+187
+00:16:55,340 --> 00:17:00,060
+certificate means your connection to the dashboard is encrypted, and you usually set it up with a free
+
+188
+00:17:00,060 --> 00:17:05,820
+SSL certificate through your domain or proxy setup. That way, you're not signing in or viewing data over
+
+189
+00:17:05,820 --> 00:17:12,140
+a plain unencrypted domain. And fourth, and most important, treat your tokens like passwords. Your gateway
+
+190
+00:17:12,140 --> 00:17:18,460
+token, Telegram bot token, and API keys are basically keys to your entire setup. Don't paste them into public
+
+191
+00:17:18,460 --> 00:17:23,260
+places, don't screenshot them. And if you think one leaked, you need to change it immediately and
+
+192
+00:17:23,260 --> 00:17:28,140
+replace it in your Hostinger environment variables. And make sure you don't forget to use the first link
+
+193
+00:17:28,140 --> 00:17:32,780
+in the video description when you're signing up for Hostinger. By using that link, you'll automatically
+
+194
+00:17:32,780 --> 00:17:38,460
+get the lowest price available on all VPS plans. Thanks for watching this video, and I'll see you in the next one.

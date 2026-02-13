@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -11,9 +12,14 @@ from urllib.parse import parse_qs, urlparse
 from logger_utils import format_bytes, log_stage
 
 from .models import SourceMedia, TranscriptionError
-from .utils import _sanitize_filename
 
 LOGGER = logging.getLogger("transcribe_youtube")
+
+
+def _sanitize_filename(value: str) -> str:
+    value = re.sub(r"[^A-Za-z0-9._-]+", "_", value.strip())
+    value = value.strip("._")
+    return value or f"transcript_{int(time.time())}"
 
 
 def _extract_youtube_id(url: str) -> Optional[str]:

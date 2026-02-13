@@ -10,9 +10,26 @@ from pathlib import Path
 from logger_utils import log_stage
 
 from .models import NormalizedMedia, TranscriptionError
-from .utils import _probe_duration_seconds
 
 LOGGER = logging.getLogger("transcribe_youtube")
+
+
+def _probe_duration_seconds(path: Path) -> float:
+    command = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        str(path),
+    ]
+    try:
+        result = subprocess.check_output(command, text=True).strip()
+        return float(result)
+    except Exception:
+        return 0.0
 
 
 class AudioNormalizer:

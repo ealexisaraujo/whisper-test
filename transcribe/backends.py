@@ -17,10 +17,20 @@ from .constants import (
     OPENAI_PROMPT_CAPABLE_MODELS,
     OPENAI_TRANSCRIPTION_MODELS,
 )
+from .downloader import _sanitize_filename
 from .models import BackendResult, CapabilityError, TranscriptionError
-from .utils import _probe_duration_seconds, _sanitize_filename, _to_float
+from .normalizer import _probe_duration_seconds
 
 LOGGER = logging.getLogger("transcribe_youtube")
+
+
+def _to_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _first_not_none(*values: Any) -> Any:

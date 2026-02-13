@@ -11,9 +11,9 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from logger_utils import format_bytes, log_stage
 
-from .backends import TranscriptionBackend, combine_text_from_segments
+from .backends import TranscriptionBackend, _to_float, combine_text_from_segments
 from .models import BackendResult, NormalizedMedia, TranscriptionError
-from .utils import _probe_duration_seconds, _to_float
+from .normalizer import _probe_duration_seconds
 
 LOGGER = logging.getLogger("transcribe_youtube")
 
