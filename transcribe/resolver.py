@@ -1,10 +1,12 @@
-"""Input resolution: YouTube URL vs local file."""
+"""Input resolution: remote URL (YouTube, X) vs local file."""
 
 from __future__ import annotations
 
 import logging
 import re
 from pathlib import Path
+from typing import Optional
+from urllib.parse import urlparse
 
 from logger_utils import format_bytes
 
@@ -27,16 +29,23 @@ def _normalize_input_source(value: str) -> str:
 
 
 class InputResolver:
-    """Resolves whether the input is a YouTube URL or local media path."""
+    """Resolves whether the input is a supported remote URL or local media path."""
 
-    YOUTUBE_HOSTS = ("youtube.com", "youtu.be")
+    PLATFORM_HOSTS = {
+        "youtube": ("youtube.com", "youtu.be"),
+        "x": ("x.com", "twitter.com"),
+    }
+    PLATFORM_LABELS = {"youtube": "YouTube", "x": "X"}
 
     @classmethod
     def resolve(cls, input_value: str) -> SourceRequest:
         input_value = _normalize_input_source(input_value)
-        if cls._is_youtube_url(input_value):
-            LOGGER.info("Input resolved as YouTube URL.")
-            return SourceRequest(source=input_value, is_youtube=True)
+        platform = cls._detect_platform(input_value)
+        if platform:
+            LOGGER.info("Input resolved as %s URL.", cls.PLATFORM_LABELS[platform])
+            return SourceRequest(
+                source=input_value, is_youtube=platform == "youtube", platform=platform
+            )
 
         local = Path(input_value).expanduser().resolve()
         if not local.exists():
@@ -49,8 +58,15 @@ class InputResolver:
         return SourceRequest(source=str(local), is_youtube=False, local_path=local)
 
     @classmethod
+    def _detect_platform(cls, value: str) -> Optional[str]:
+        if not value.lower().startswith(("http://", "https://")):
+            return None
+        host = (urlparse(value).hostname or "").lower()
+        for platform, hosts in cls.PLATFORM_HOSTS.items():
+            if any(host == h or host.endswith("." + h) for h in hosts):
+                return platform
+        return None
+
+    @classmethod
     def _is_youtube_url(cls, value: str) -> bool:
-        value_l = value.lower()
-        if not value_l.startswith(("http://", "https://")):
-            return False
-        return any(host in value_l for host in cls.YOUTUBE_HOSTS)
+        return cls._detect_platform(value) == "youtube"

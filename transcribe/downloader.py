@@ -1,4 +1,4 @@
-"""YouTube audio downloader using yt-dlp."""
+"""Remote audio downloader (YouTube, X) using yt-dlp."""
 
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ def _extract_youtube_id(url: str) -> Optional[str]:
 
 
 class MediaDownloader:
-    """Downloads YouTube audio using yt-dlp."""
+    """Downloads remote audio (YouTube, X) using yt-dlp."""
 
     def download(
         self,
@@ -53,12 +53,14 @@ class MediaDownloader:
         output_dir: Path,
         cookies_file: Optional[str] = None,
         browser_cookies: Optional[str] = None,
+        platform: str = "youtube",
     ) -> SourceMedia:
+        label = {"youtube": "YouTube", "x": "X"}.get(platform, platform)
         try:
             import yt_dlp
         except ModuleNotFoundError as exc:
             raise TranscriptionError(
-                "yt-dlp is required for YouTube inputs. Install requirements.txt first."
+                f"yt-dlp is required for {label} inputs. Install requirements.txt first."
             ) from exc
 
         output_template = str(output_dir / "%(id)s.%(ext)s")
@@ -81,20 +83,20 @@ class MediaDownloader:
             ydl_opts["cookiesfrombrowser"] = (browser_cookies,)
 
         if cookies_file or browser_cookies:
-            LOGGER.info("YouTube auth options enabled (path details hidden for safety).")
+            LOGGER.info("%s auth options enabled (path details hidden for safety).", label)
 
-        LOGGER.info("Starting YouTube download/extract with yt-dlp...")
+        LOGGER.info("Starting %s download/extract with yt-dlp...", label)
         try:
-            with log_stage(LOGGER, "youtube_download", source=url):
+            with log_stage(LOGGER, f"{platform}_download", source=url):
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(url, download=True)
         except Exception as exc:
-            raise TranscriptionError(f"YouTube download failed: {exc}") from exc
+            raise TranscriptionError(f"{label} download failed: {exc}") from exc
 
-        video_id = info.get("id") or f"youtube_{int(time.time())}"
+        video_id = info.get("id") or f"{platform}_{int(time.time())}"
         title = info.get("title") or video_id
-        LOGGER.info("YouTube metadata resolved: id=%s title=%s", video_id, title)
-        requested_id = _extract_youtube_id(url)
+        LOGGER.info("%s metadata resolved: id=%s title=%s", label, video_id, title)
+        requested_id = _extract_youtube_id(url) if platform == "youtube" else None
         if requested_id and video_id and requested_id != video_id:
             raise TranscriptionError(
                 "YouTube ID mismatch detected: requested "
@@ -109,7 +111,7 @@ class MediaDownloader:
         else:
             candidates = sorted(output_dir.glob(f"{video_id}.*"), key=lambda p: p.stat().st_mtime)
             if not candidates:
-                raise TranscriptionError("YouTube download completed but audio file was not found.")
+                raise TranscriptionError(f"{label} download completed but audio file was not found.")
             audio_path = candidates[-1]
 
         try:
@@ -122,5 +124,5 @@ class MediaDownloader:
             source=url,
             local_path=audio_path,
             source_name=_sanitize_filename(title),
-            metadata={"youtube_id": video_id, "youtube_title": title},
+            metadata={"platform": platform, f"{platform}_id": video_id, f"{platform}_title": title},
         )

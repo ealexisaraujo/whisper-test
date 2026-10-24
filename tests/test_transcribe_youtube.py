@@ -94,6 +94,54 @@ def test_input_resolver_normalizes_escaped_youtube_url() -> None:
     assert req.source == "https://www.youtube.com/watch?v=fcZMmP5dsl4"
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://x.com/collision/status/2109714250226905248/video/1",
+        "https://twitter.com/user/status/123",
+        "https://mobile.twitter.com/user/status/123",
+    ],
+)
+def test_input_resolver_detects_x_urls(url: str) -> None:
+    req = InputResolver.resolve(url)
+    assert req.platform == "x"
+    assert req.is_remote is True
+    assert req.is_youtube is False
+
+
+def test_input_resolver_rejects_lookalike_hosts() -> None:
+    with pytest.raises(TranscriptionError, match="Input file not found"):
+        InputResolver.resolve("https://dropbox.com/s/video.mp4")
+
+
+def test_media_downloader_x_skips_youtube_id_check(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    class FakeYDL:
+        def __init__(self, opts):
+            self.opts = opts
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def extract_info(self, url, download=True):
+            del url, download
+            (tmp_path / "2109713206524641280.m4a").write_bytes(b"audio")
+            return {"id": "2109713206524641280", "title": "John Collison - Cheeky Pint"}
+
+    monkeypatch.setitem(sys.modules, "yt_dlp", types.SimpleNamespace(YoutubeDL=FakeYDL))
+
+    media = MediaDownloader().download(
+        "https://x.com/collision/status/2109714250226905248/video/1",
+        output_dir=tmp_path,
+        platform="x",
+    )
+    assert media.local_path.name == "2109713206524641280.m4a"
+    assert media.source_name == "John_Collison_-_Cheeky_Pint"
+    assert media.metadata["platform"] == "x"
+
+
 def test_media_downloader_rejects_youtube_id_mismatch(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     class FakeYDL:
         def __init__(self, opts):

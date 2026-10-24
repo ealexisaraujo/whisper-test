@@ -20,6 +20,11 @@ class SourceRequest:
     source: str
     is_youtube: bool
     local_path: Optional[Path] = None
+    platform: Optional[str] = None  # "youtube", "x", or None for local files
+
+    @property
+    def is_remote(self) -> bool:
+        return self.platform is not None
 
 
 @dataclass
