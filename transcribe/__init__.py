@@ -2,6 +2,7 @@
 
 from .backends import (
     BackendFactory,
+    EG2Backend,
     MLXWhisperBackend,
     OpenAIBackend,
     TranscriptionBackend,
@@ -70,6 +71,7 @@ __all__ = [
     "TranscriptionBackend",
     "OpenAIBackend",
     "MLXWhisperBackend",
+    "EG2Backend",
     "BackendFactory",
     "OutputWriter",
     # Functions

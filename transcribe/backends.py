@@ -14,6 +14,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 from logger_utils import format_bytes, log_stage
 
 from .constants import (
+    EG2_LANGUAGES,
     OPENAI_PROMPT_CAPABLE_MODELS,
     OPENAI_TRANSCRIPTION_MODELS,
 )
@@ -313,6 +314,85 @@ class MLXWhisperBackend(TranscriptionBackend):
         )
 
 
+class EG2Backend(TranscriptionBackend):
+    """EmbeddingGemma 2 reader on Core ML (Apple Neural Engine). English only."""
+
+    def __init__(self, model_name: str):
+        self.model_name = model_name
+        self._engine = None
+
+    def transcribe(
+        self,
+        audio_path: Path,
+        language: Optional[str],
+        context_info: Optional[str],
+        timeout_seconds: int,
+        generation: Mapping[str, Any],
+    ) -> BackendResult:
+        if language and language.split("-")[0].lower() not in EG2_LANGUAGES:
+            raise CapabilityError(
+                f"eg2 backend only transcribes English (closed English vocabulary); got --language {language}. "
+                "Use --backend mlx-whisper for other languages."
+            )
+        if context_info:
+            LOGGER.info("eg2 backend ignores context/hotwords: its vocabulary is fixed")
+
+        try:
+            import soundfile as sf
+
+            from .eg2 import EG2Engine, words_to_segments
+        except ModuleNotFoundError as exc:
+            raise TranscriptionError(f"eg2 backend dependencies missing: {exc}") from exc
+
+        progress_log_seconds = max(1, int(generation.get("progress_log_seconds", 20)))
+
+        def _transcribe() -> Any:
+            if self._engine is None:
+                with log_stage(LOGGER, "eg2_model_load", model=self.model_name):
+                    self._engine = EG2Engine()
+            samples, sample_rate = sf.read(str(audio_path), dtype="float32", always_2d=False)
+            if sample_rate != 16000:
+                raise TranscriptionError(f"eg2 expects 16 kHz audio, got {sample_rate} Hz")
+            if samples.ndim > 1:
+                samples = samples.mean(axis=1)
+            words = self._engine.transcribe(
+                samples,
+                on_window=lambda done, total: LOGGER.debug("eg2 window %s/%s", done, total),
+            )
+            return words, self._engine.render(words)
+
+        LOGGER.info("EG2 transcription started: model=%s audio=%s", self.model_name, audio_path)
+        try:
+            words, tokens = _run_with_progress(
+                _transcribe,
+                activity="EG2 transcription",
+                timeout_seconds=timeout_seconds,
+                progress_log_seconds=progress_log_seconds,
+            )
+        except FutureTimeoutError as exc:
+            raise TranscriptionError("EG2 transcription timed out. Increase --timeout-seconds.") from exc
+        except TranscriptionError:
+            raise
+        except Exception as exc:
+            raise TranscriptionError(f"EG2 transcription failed: {exc}") from exc
+
+        segments = words_to_segments(words, tokens)
+        text = " ".join(tokens)
+        LOGGER.info("EG2 transcription finished: words=%s segments=%s", len(words), len(segments))
+        return BackendResult(
+            text=text,
+            segments=segments,
+            language="en",
+            duration_sec=_probe_duration_seconds(audio_path),
+            raw={
+                "words": [
+                    {"word": tok, "start": w.start, "end": w.end, "score": round(w.score, 3)}
+                    for w, tok in zip(words, tokens)
+                ]
+            },
+        )
+
+
 class BackendFactory:
     """Builds backend instances from CLI args."""
 
@@ -320,6 +400,8 @@ class BackendFactory:
     def create(args: argparse.Namespace) -> TranscriptionBackend:
         if args.backend == "mlx-whisper":
             return MLXWhisperBackend(model_name=args.model)
+        if args.backend == "eg2":
+            return EG2Backend(model_name=args.model)
         if args.backend == "openai":
             return OpenAIBackend(model_name=args.model, base_url=args.openai_base_url)
         raise TranscriptionError(f"Unsupported backend: {args.backend}")

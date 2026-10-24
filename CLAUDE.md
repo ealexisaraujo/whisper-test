@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Python 3.11 CLI tool for transcribing YouTube videos and local media files using two manually-selected ASR backends: **MLX-Whisper** (Apple Silicon) and **OpenAI** (cloud). There is **no automatic fallback** between backends — exactly one backend runs per execution, selected via `--backend`.
+Python 3.11 CLI tool for transcribing YouTube videos and local media files using three manually-selected ASR backends: **MLX-Whisper** (Apple Silicon), **OpenAI** (cloud), and **EG2** (EmbeddingGemma 2 on Core ML/ANE, English only). There is **no automatic fallback** between backends — exactly one backend runs per execution, selected via `--backend`.
 
 ## Commands
 
@@ -22,7 +22,7 @@ python -m pytest tests/test_transcribe_youtube.py -k "test_name" -q
 python -m py_compile transcribe_youtube.py
 
 # Run the CLI
-python transcribe_youtube.py <youtube-url-or-local-file> --backend {mlx-whisper,openai}
+python transcribe_youtube.py <youtube-url-or-local-file> --backend {mlx-whisper,openai,eg2}
 
 # Install dependencies
 pip install -r requirements.txt
@@ -47,7 +47,8 @@ transcribe/
 ├── resolver.py      # InputResolver + _normalize_input_source
 ├── downloader.py    # MediaDownloader + _sanitize_filename, _extract_youtube_id
 ├── normalizer.py    # AudioNormalizer + _probe_duration_seconds
-├── backends.py      # TranscriptionBackend, OpenAIBackend, MLXWhisperBackend, BackendFactory + segment normalizers + _run_with_progress, _to_float
+├── eg2.py           # EmbeddingGemma 2 engine: model download, LogMel, Core ML encoder/reader/scorer, CTC collapse, punctuation
+├── backends.py      # TranscriptionBackend, OpenAIBackend, MLXWhisperBackend, EG2Backend, BackendFactory + segment normalizers + _run_with_progress, _to_float
 ├── chunking.py      # should_chunk_audio, split_audio_into_chunks, offset_segments, transcribe_with_chunking, run_selected_backend
 ├── output.py        # OutputWriter, format_srt_timestamp, _render_txt, _render_srt
 └── cli.py           # parse_args, main, build_context_info, validate_openai_output_constraints, parse_output_formats, has_transcription_content, _build_schema
@@ -85,3 +86,5 @@ Detailed agent guidance lives in `docs/agents/`:
 - `command-recipes.md` — copy-paste command examples
 - `testing-and-release.md` — test/release checklist
 - `troubleshooting.md` — common issues and fixes
+- `eg2-engine-analysis.md` — reverse-engineered EG2 pipeline with evidence
+- `eg2-benchmark.md` — EG2 vs mlx-whisper speed/WER benchmark (`benchmarks/bench_asr.py`)

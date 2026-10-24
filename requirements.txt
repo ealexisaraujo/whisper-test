@@ -2,3 +2,5 @@ python-dotenv==1.0.1
 yt-dlp[default]==2026.8.19
 openai==2.20.0
 mlx-whisper>=0.4.0
+coremltools>=9.0; sys_platform == "darwin"
+soundfile>=0.12

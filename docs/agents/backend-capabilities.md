@@ -22,8 +22,17 @@ Execution policy:
 - Requires `OPENAI_API_KEY`
 - Auto-chunk protects against oversized uploads in `--chunk-mode auto`
 
+### EG2 (EmbeddingGemma 2, Core ML)
+- Default model: `eg2demo-v5` (715 MB, downloaded once to `~/.cache/whisper_translate/eg2/v5`, SHA-256 verified; override with `EG2_MODEL_DIR`)
+- Runs on the Apple Neural Engine; requires `coremltools` (macOS)
+- ~100-120x realtime on M1 Pro, 5.3% WER on LibriSpeech test-clean (Whisper turbo: 16.5x, 1.9%); see `eg2-benchmark.md`
+- English only: a non-English `--language` raises `CapabilityError`
+- Ignores context/hotwords (fixed vocabulary); handles long audio itself, so auto-chunking is skipped
+- Produces `txt`/`srt`/`json`; JSON `raw.words` carries per-word times and confidence
+
 Quick choice:
-- Apple Silicon Mac, best local speed: `mlx-whisper`.
+- Apple Silicon Mac, fastest English draft: `eg2`.
+- Apple Silicon Mac, best local accuracy: `mlx-whisper`.
 - Need cloud API speed: `openai`.
 - Need OpenAI + `srt`: `whisper-1` or `gpt-4o-transcribe-diarize`.
 

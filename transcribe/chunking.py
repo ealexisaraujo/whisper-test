@@ -83,6 +83,8 @@ def should_chunk_audio(
         return False
     if chunk_mode == "force":
         return True
+    if backend == "eg2":
+        return False  # EG2 windows long audio itself (20 s windows, 18 s step)
 
     if duration_sec > 0 and duration_sec >= (chunk_threshold_minutes * 60):
         return True

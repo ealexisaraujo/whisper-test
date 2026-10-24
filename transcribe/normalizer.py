@@ -38,6 +38,7 @@ class AudioNormalizer:
     SAMPLE_RATES = {
         "mlx-whisper": 16000,
         "openai": 16000,
+        "eg2": 16000,
     }
 
     def normalize(self, media_path: Path, backend: str, output_dir: Path) -> NormalizedMedia:
