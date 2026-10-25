@@ -473,9 +473,21 @@ def test_guard_drops_amara_line_at_the_end_of_a_chunk():
     assert "known-phrase-trailing" in out.flags[0]
 
 
-def test_guard_drops_english_trailing_phrase_and_repeats():
-    out = apply_guards(_out("see you next week. Thank you for watching. Thanks for watching."), {0: LOUD})
+def test_guard_drops_repeated_trailing_attribution_lines():
+    out = apply_guards(_out("see you next week. Subtitles by the Amara.org community Subtitles by the Amara.org community"),
+                       {0: LOUD})
     assert _texts(out) == ["see", "you", "next", "week."]
+
+
+@pytest.mark.parametrize("text", ["so that is all I have. Thank you for listening.",
+                                  "see you next week. Thank you for watching. Thanks for watching.",
+                                  "muchas gracias por ver",
+                                  "please like and subscribe",
+                                  "I really want to thank you for watching this video"])
+def test_guard_keeps_spoken_sign_offs_at_the_end_of_real_speech(text):
+    out = apply_guards(_out(text), {0: LOUD})
+    assert _texts(out) == text.split()
+    assert out.flags.get(0, []) == []
 
 
 def test_guard_drops_chunk_that_is_only_a_long_phrase_with_trailing_punctuation():

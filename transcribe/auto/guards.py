@@ -55,6 +55,9 @@ MAX_REPEAT_PERIOD = 32
 MAX_SINGLE_WORD_REPEATS = 10  # same word this many times in a row is a loop, fewer is a stutter
 PHRASE_TOLERANCE_MIN_TOKENS = 3  # only phrases this long tolerate one extra courtesy word
 TRAILING_PHRASE_MIN_TOKENS = 3  # only phrases this long are dropped as a trailing run (short ones: whole chunk only)
+# Only attribution lines (subtitle/caption credits) are dropped from the end of real speech; spoken sign-offs
+# such as "thank you for listening" are kept verbatim there and only dropped when they are the whole chunk.
+TRAILING_ATTRIBUTION_MARKERS = ("amara.org", "subtitles", "subtítulos", "subtitulos", "subtitulado", "captions")
 COURTESY_WORDS = frozenset({"everyone", "guys", "all", "folks", "friends", "todos", "amigos"})
 LOW_PROB_TAIL = 0.15
 VAD_TAIL_TOLERANCE = 0.25  # seconds a trailing word may stray from VAD speech before it is dropped
@@ -71,6 +74,11 @@ def _phrase_tokens(phrase: str) -> List[str]:
 
 
 _PHRASES = [(p, _phrase_tokens(p)) for p in HALLUCINATION_PHRASES]
+_TRAILING_PHRASES = sorted(
+    ((p, t) for p, t in _PHRASES
+     if len(t) >= TRAILING_PHRASE_MIN_TOKENS and any(m in p for m in TRAILING_ATTRIBUTION_MARKERS)),
+    key=lambda p: -len(p[1]),
+)
 
 
 def _is_known_phrase_chunk(words: Sequence[Word]) -> bool:
@@ -95,20 +103,21 @@ def _is_known_phrase_chunk(words: Sequence[Word]) -> bool:
 
 
 def _drop_trailing_phrases(words: List[Word]) -> Tuple[List[Word], bool]:
-    """Drop known phrases of 3+ tokens that end the chunk ("... Subtítulos realizados por la comunidad de Amara.org").
+    """Drop subtitle/caption attribution lines that end the chunk ("... Subtítulos realizados por la comunidad de Amara.org").
 
-    Short phrases ("subscribe", "please subscribe") are only dropped when they are the whole chunk (see
-    `_is_known_phrase_chunk`): "I subscribe" inside or at the end of real speech stays verbatim. Repeated trailing
-    phrases are dropped one after another; a phrase that is the whole remaining text empties the chunk.
+    Only attribution phrases of 3+ tokens (see `TRAILING_ATTRIBUTION_MARKERS`) are dropped here, because nobody says
+    them. Spoken sign-offs ("thank you for listening", "gracias por ver") and short phrases stay verbatim at the end of
+    real speech; they are only dropped when they are the whole chunk (see `_is_known_phrase_chunk`). Repeated trailing
+    attribution lines are dropped one after another; one that is the whole remaining text empties the chunk.
     """
     kept = list(words)
     dropped = False
     while kept:
         tokens = [(i, t) for i, t in enumerate(_tokens(kept)) if t]
         cut: Optional[int] = None
-        for _, phrase in sorted(_PHRASES, key=lambda p: -len(p[1])):
+        for _, phrase in _TRAILING_PHRASES:
             n = len(phrase)
-            if n >= TRAILING_PHRASE_MIN_TOKENS and len(tokens) >= n and [t for _, t in tokens[-n:]] == phrase:
+            if len(tokens) >= n and [t for _, t in tokens[-n:]] == phrase:
                 cut = tokens[-n][0]
                 break
         if cut is None:
