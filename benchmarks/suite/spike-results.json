@@ -1,0 +1,444 @@
+{
+  "asr": [
+    {
+      "engine": "whisper-large-v3",
+      "clip": "en",
+      "wer": 0.0127,
+      "load_s": 2.5,
+      "x_rt_first": 4.5,
+      "x_rt": 6.5,
+      "rss_gb": 3.39,
+      "mlx_peak_gb": 3.7,
+      "word_ts": true,
+      "word_probs": true,
+      "n_words": 80,
+      "extra": "",
+      "hyp": "concord returned to its place amidst the tents the english forwarded to the french baskets of flowers of which they had made a plentiful provision to greet the arrival of the young princess the french in return invited the english to a supper which was to be given the next day congratulations were poured in upon the princess everywhere during her journey this has indeed been a harassing day continued the young man his eyes fixed upon his friend And."
+    },
+    {
+      "engine": "whisper-large-v3",
+      "clip": "es",
+      "wer": 0.0303,
+      "load_s": 2.5,
+      "x_rt_first": 5.7,
+      "x_rt": 6.6,
+      "rss_gb": 3.39,
+      "mlx_peak_gb": 3.7,
+      "word_ts": true,
+      "word_probs": true,
+      "n_words": 67,
+      "extra": "",
+      "hyp": "Se recomienda enfáticamente a los viajeros que se informen sobre cualquier riesgo del clima extremo en el área que visitan, dado que ello puede afectar sus planes de viaje. Fue tanta la cantidad de gente que se concentró que no todos pudieron acceder al funeral en la Plaza de San Pedro. Esto parece tener sentido, ya que en la Tierra no se percibe su movimiento, ¿cierto? Gracias."
+    },
+    {
+      "engine": "whisper-large-v3",
+      "clip": "en_hard",
+      "wer": 0.0206,
+      "load_s": 2.2,
+      "x_rt_first": 4.3,
+      "x_rt": 4.8,
+      "rss_gb": 3.39,
+      "mlx_peak_gb": 3.69,
+      "word_ts": true,
+      "word_probs": true,
+      "n_words": 97,
+      "extra": "",
+      "hyp": "i am from the cutter lying off the coast don't cry he said i was obliged to come and-and you have not found out anything came in quick frightened tones i wish you would believe me that i am in as great trouble about it as you are that my father sir risdon graeme has smuggled goods here he could not help it he hates the smugglers you shall not tell pray pray say you will not archie was silent it all comes of dressing up in this stupid way like a rough fisher lad that."
+    },
+    {
+      "engine": "whisper-large-v3",
+      "clip": "es_hard",
+      "wer": 0.0179,
+      "load_s": 2.4,
+      "x_rt_first": 4.6,
+      "x_rt": 5.4,
+      "rss_gb": 3.39,
+      "mlx_peak_gb": 3.69,
+      "word_ts": true,
+      "word_probs": true,
+      "n_words": 57,
+      "extra": "",
+      "hyp": "y las almas buscando algún alivio se revuelven ansiosas y hacen el mundo que así resulta ser del dolor obra el dolor o la nada quien tenga corazón venga y escoja como todas las penas aunque tantas son una sola pena una sola infinita soberana la pena de vivir llevando al todo temblando ante la nada Gracias."
+    },
+    {
+      "engine": "qwen3-asr-1.7b",
+      "clip": "en",
+      "wer": 0.0,
+      "load_s": 6.5,
+      "x_rt_first": 8.6,
+      "x_rt": 11.2,
+      "rss_gb": 3.3,
+      "mlx_peak_gb": 5.15,
+      "word_ts": false,
+      "word_probs": false,
+      "n_words": 1,
+      "extra": "1 segment(s); word timestamps need the separate Qwen3 forced aligner",
+      "hyp": "Concord returned to its place amidst the tents. The English forwarded to the French baskets of flowers, of which they had made a plentiful provision to greet the arrival of the young princess. The French, in return, invited the English to a supper, which was to be given the next day. Congratulations were poured in upon the princess everywhere during her journey. This has indeed been a harassing day,\" continued the young man, his eyes fixed upon his friend."
+    },
+    {
+      "engine": "qwen3-asr-1.7b",
+      "clip": "es",
+      "wer": 0.0152,
+      "load_s": 5.9,
+      "x_rt_first": 9.5,
+      "x_rt": 10.3,
+      "rss_gb": 3.7,
+      "mlx_peak_gb": 5.2,
+      "word_ts": false,
+      "word_probs": false,
+      "n_words": 1,
+      "extra": "1 segment(s); word timestamps need the separate Qwen3 forced aligner",
+      "hyp": "Se recomienda enfáticamente a los viajeros que se informen sobre cualquier riesgo del clima extremo en el área que visitan, dado que ello puede afectar sus planes de viaje. Fue tanta la cantidad de gente que se concentró que no todos pudieron acceder al funeral en la Plaza de San Pedro. Esto parece tener sentido, ya que en la Tierra no se percibe su movimiento, ¿cierto?"
+    },
+    {
+      "engine": "qwen3-asr-1.7b",
+      "clip": "en_hard",
+      "wer": 0.0309,
+      "load_s": 6.3,
+      "x_rt_first": 7.3,
+      "x_rt": 8.7,
+      "rss_gb": 3.46,
+      "mlx_peak_gb": 5.17,
+      "word_ts": false,
+      "word_probs": false,
+      "n_words": 1,
+      "extra": "1 segment(s); word timestamps need the separate Qwen3 forced aligner",
+      "hyp": "I'm from the cutter lying off the coast. Don't cry,\" he said. \"I was obliged to come, and, and you have not found out anything?\" Came in quick, frightened tones. \"I wish you would believe me that I am in as great trouble about it as you are. That my father, Sir Rizden Graham, has smuggled goods here. He could not help it. He hates the smugglers. You shall not tell. Pray, pray, say you will not.\" Archie was silent. It all comes of dressing up in this stupid way, like a rough fisher lad."
+    },
+    {
+      "engine": "qwen3-asr-1.7b",
+      "clip": "es_hard",
+      "wer": 0.0,
+      "load_s": 5.3,
+      "x_rt_first": 10.3,
+      "x_rt": 13.6,
+      "rss_gb": 4.21,
+      "mlx_peak_gb": 5.2,
+      "word_ts": false,
+      "word_probs": false,
+      "n_words": 1,
+      "extra": "1 segment(s); word timestamps need the separate Qwen3 forced aligner",
+      "hyp": "y las almas buscando algún alivio se revuelven ansiosas y hacen el mundo que así resulta ser del dolor obra el dolor o la nada quien tenga corazón venga y escoja como todas las penas aunque tantas son una sola pena una sola infinita soberana la pena de vivir llevando al todo temblando ante la nada"
+    },
+    {
+      "engine": "parakeet-v3",
+      "clip": "en",
+      "wer": 0.0,
+      "load_s": 2.0,
+      "x_rt_first": 35.5,
+      "x_rt": 53.0,
+      "rss_gb": 0.92,
+      "mlx_peak_gb": 2.52,
+      "word_ts": true,
+      "word_probs": true,
+      "n_words": 153,
+      "extra": "per-token `confidence` field",
+      "hyp": "Concord returned to its place amidst the tents. The English forwarded to the French baskets of flowers, of which they had made a plentiful provision to greet the arrival of the young princess. The French, in return, invited the English to a supper, which was to be given the next day. Congratulations were poured in upon the princess everywhere during her journey. This has indeed been a harassing day, continued the young man, his eyes fixed upon his friend."
+    },
+    {
+      "engine": "parakeet-v3",
+      "clip": "es",
+      "wer": 0.0303,
+      "load_s": 1.7,
+      "x_rt_first": 38.8,
+      "x_rt": 44.9,
+      "rss_gb": 1.73,
+      "mlx_peak_gb": 4.17,
+      "word_ts": true,
+      "word_probs": true,
+      "n_words": 130,
+      "extra": "per-token `confidence` field",
+      "hyp": "Se recomienda enfáticamente a los viajeros que se informen sobre cualquier riesgo del clima extremo en el área que visitan, dado que ello pueda afectar sus planes de viaje. Fue tanta la cantidad de gente que se concentró que no todos pudieron acceder al funeral en la plaza de San Pedro. Esto parece tener sentido, ya que en la Tierra no se percibe su movimiento, ¿cierto?"
+    },
+    {
+      "engine": "parakeet-v3",
+      "clip": "en_hard",
+      "wer": 0.0309,
+      "load_s": 1.8,
+      "x_rt_first": 43.6,
+      "x_rt": 44.1,
+      "rss_gb": 1.35,
+      "mlx_peak_gb": 2.96,
+      "word_ts": true,
+      "word_probs": true,
+      "n_words": 169,
+      "extra": "per-token `confidence` field",
+      "hyp": "I am from the cutter lying off the coast. Don't cry, he said. I was obliged to come. And and you have not found out anything? came in quick, frightened tones. I wish you would believe me, that I am in as great trouble about it as you are. That my father, Sir Risden Graham, has smuggled goods here? He could not help it. He hates the smugglers. You shall not tell. Pray, pray, say you will not. Archie was silent. It all comes of dressing up in this stupid way, like a rough fisher lad."
+    },
+    {
+      "engine": "parakeet-v3",
+      "clip": "es_hard",
+      "wer": 0.0,
+      "load_s": 1.7,
+      "x_rt_first": 46.4,
+      "x_rt": 56.0,
+      "rss_gb": 1.93,
+      "mlx_peak_gb": 4.57,
+      "word_ts": true,
+      "word_probs": true,
+      "n_words": 112,
+      "extra": "per-token `confidence` field",
+      "hyp": "Y las almas, buscando algún alivio, se revuelven ansiosas y hacen el mundo, que así resulta ser del dolor obra, el dolor o la nada. Quien tenga corazón venga y escoja, como todas las penas, aunque tantas, son una sola pena, una sola, infinita, soberana, la pena de vivir llevando al todo, temblando ante la nada."
+    },
+    {
+      "engine": "eg2",
+      "clip": "en",
+      "wer": 0.0127,
+      "load_s": 4.3,
+      "x_rt_first": 86.5,
+      "x_rt": 96.4,
+      "rss_gb": 1.09,
+      "mlx_peak_gb": 0.0,
+      "word_ts": true,
+      "word_probs": true,
+      "n_words": 79,
+      "extra": "per-word CTC margin `score`",
+      "hyp": "Concord returned to its place amidst the tents. The English voted to the French baskets of flowers, of which they had made a plentiful provision to greet the arrival of the young princess. The French in return invited the English to a supper, which was to be given the next day congratulations were poured in upon the princess everywhere During her journey. This has indeed been a harassing day continued the young man, his eyes fixed upon his friend."
+    },
+    {
+      "engine": "eg2",
+      "clip": "en_hard",
+      "wer": 0.0825,
+      "load_s": 3.3,
+      "x_rt_first": 89.7,
+      "x_rt": 117.7,
+      "rss_gb": 1.14,
+      "mlx_peak_gb": 0.0,
+      "word_ts": true,
+      "word_probs": true,
+      "n_words": 93,
+      "extra": "per-word CTC margin `score`",
+      "hyp": "I'm from the cutter lying off the coast. Don't cry, he said. I was obliged to come and and you have not found out anything came in quick, frightened tones. I wish you would believe me that I am in his great trouble about it As you are that my father, Sir Risdon Graham has smuggled good. He could not help it. He hates the smugglers. You shall not tell pray say you will not Archie was silent and all comes of dressing up in this stupid way like a rough Fisher Loud"
+    }
+  ],
+  "score": {
+    "ref_logprob": -0.011,
+    "corrupted_logprob": -1.475,
+    "ref_higher": true
+  },
+  "vad": {
+    "clip_s": 29.5,
+    "n_spans": 4,
+    "first_start": 0.6,
+    "last_end": 29.5,
+    "excludes_silence": true,
+    "pyannote_import": "4.0.7",
+    "hf_token_set": false
+  },
+  "align": {
+    "en": {
+      "hyp_words": 79,
+      "aligned_words": 79,
+      "aligner_s": 0.4,
+      "matched_words": 79,
+      "median_abs_start_diff_s": 0.16,
+      "p90_abs_start_diff_s": 0.38,
+      "aligner_last_start": 28.96,
+      "aligner_last_end": 29.36,
+      "whisper_last_word_end": 29.28,
+      "clip_s": 29.5
+    },
+    "es": {
+      "hyp_words": 66,
+      "aligned_words": 66,
+      "aligner_s": 0.41,
+      "matched_words": 66,
+      "median_abs_start_diff_s": 0.15,
+      "p90_abs_start_diff_s": 0.37,
+      "aligner_last_start": 29.36,
+      "aligner_last_end": 29.68,
+      "whisper_last_word_end": 31.0,
+      "clip_s": 31.7
+    },
+    "rss_gb": 5.54,
+    "mlx_peak_gb": 8.08
+  },
+  "picker:mlx-community/Qwen3-30B-A3B-4bit": {
+    "model": "mlx-community/Qwen3-30B-A3B-4bit",
+    "load_s": 5.4,
+    "tok_s": 58.6,
+    "prompt_tok_s": 180,
+    "rss_gb": 9.52,
+    "mlx_peak_gb": 16.18,
+    "json_valid": 16,
+    "correct": 15,
+    "n": 16,
+    "first_item_valid": true,
+    "items": [
+      {
+        "choice": "A",
+        "expected": "A",
+        "raw": "{\"choice\": \"A\"}"
+      },
+      {
+        "choice": "B",
+        "expected": "B",
+        "raw": "{\"choice\": \"B\"}"
+      },
+      {
+        "choice": "A",
+        "expected": "A",
+        "raw": "{\"choice\": \"A\"}"
+      },
+      {
+        "choice": "B",
+        "expected": "B",
+        "raw": "{\"choice\": \"B\"}"
+      },
+      {
+        "choice": "B",
+        "expected": "A",
+        "raw": "{\"choice\": \"B\"}"
+      },
+      {
+        "choice": "B",
+        "expected": "B",
+        "raw": "{\"choice\": \"B\"}"
+      },
+      {
+        "choice": "B",
+        "expected": "B",
+        "raw": "{\"choice\": \"B\"}"
+      },
+      {
+        "choice": "A",
+        "expected": "A",
+        "raw": "{\"choice\": \"A\"}"
+      },
+      {
+        "choice": "B",
+        "expected": "B",
+        "raw": "{\"choice\": \"B\"}"
+      },
+      {
+        "choice": "A",
+        "expected": "A",
+        "raw": "{\"choice\": \"A\"}"
+      },
+      {
+        "choice": "A",
+        "expected": "A",
+        "raw": "{\"choice\": \"A\"}"
+      },
+      {
+        "choice": "A",
+        "expected": "A",
+        "raw": "{\"choice\": \"A\"}"
+      },
+      {
+        "choice": "A",
+        "expected": "A",
+        "raw": "{\"choice\": \"A\"}"
+      },
+      {
+        "choice": "A",
+        "expected": "A",
+        "raw": "{\"choice\": \"A\"}"
+      },
+      {
+        "choice": "A",
+        "expected": "A",
+        "raw": "{\"choice\": \"A\"}"
+      },
+      {
+        "choice": "A",
+        "expected": "A",
+        "raw": "{\"choice\": \"A\"}"
+      }
+    ]
+  },
+  "picker:mlx-community/gemma-4-26b-a4b-it-4bit": {
+    "model": "mlx-community/gemma-4-26b-a4b-it-4bit",
+    "load_s": 6.1,
+    "tok_s": 52.2,
+    "prompt_tok_s": 203,
+    "rss_gb": 9.04,
+    "mlx_peak_gb": 13.42,
+    "json_valid": 16,
+    "correct": 16,
+    "n": 16,
+    "first_item_valid": true,
+    "items": [
+      {
+        "choice": "A",
+        "expected": "A",
+        "raw": "```json\n{\"choice\": \"A\"}\n```"
+      },
+      {
+        "choice": "B",
+        "expected": "B",
+        "raw": "```json\n{\"choice\": \"B\"}\n```"
+      },
+      {
+        "choice": "A",
+        "expected": "A",
+        "raw": "```json\n{\"choice\": \"A\"}\n```"
+      },
+      {
+        "choice": "B",
+        "expected": "B",
+        "raw": "```json\n{\"choice\": \"B\"}\n```"
+      },
+      {
+        "choice": "A",
+        "expected": "A",
+        "raw": "```json\n{\"choice\": \"A\"}\n```"
+      },
+      {
+        "choice": "B",
+        "expected": "B",
+        "raw": "```json\n{\"choice\": \"B\"}\n```"
+      },
+      {
+        "choice": "B",
+        "expected": "B",
+        "raw": "```json\n{\"choice\": \"B\"}\n```"
+      },
+      {
+        "choice": "A",
+        "expected": "A",
+        "raw": "```json\n{\"choice\": \"A\"}\n```"
+      },
+      {
+        "choice": "B",
+        "expected": "B",
+        "raw": "```json\n{\"choice\": \"B\"}\n```"
+      },
+      {
+        "choice": "A",
+        "expected": "A",
+        "raw": "```json\n{\"choice\": \"A\"}\n```"
+      },
+      {
+        "choice": "A",
+        "expected": "A",
+        "raw": "```json\n{\"choice\": \"A\"}\n```"
+      },
+      {
+        "choice": "A",
+        "expected": "A",
+        "raw": "```json\n{\"choice\": \"A\"}\n```"
+      },
+      {
+        "choice": "A",
+        "expected": "A",
+        "raw": "```json\n{\"choice\": \"A\"}\n```"
+      },
+      {
+        "choice": "A",
+        "expected": "A",
+        "raw": "```json\n{\"choice\": \"A\"}\n```"
+      },
+      {
+        "choice": "A",
+        "expected": "A",
+        "raw": "```json\n{\"choice\": \"A\"}\n```"
+      },
+      {
+        "choice": "A",
+        "expected": "A",
+        "raw": "```json\n{\"choice\": \"A\"}\n```"
+      }
+    ]
+  }
+}

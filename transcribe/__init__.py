@@ -58,6 +58,16 @@ from .refine import (
 )
 from .resolver import InputResolver
 
+def __getattr__(name: str):
+    """`transcribe.run_auto` loads the auto pipeline on first access (not part of `__all__`, so star imports and the
+    other backends never import `transcribe.auto`)."""
+    if name == "run_auto":
+        from .auto.pipeline import run_auto
+
+        return run_auto
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 __all__ = [
     # Models & exceptions
     "TranscriptionError",

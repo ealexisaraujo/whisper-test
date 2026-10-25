@@ -30,7 +30,7 @@ from .models import (
     SourceMedia,
     TranscriptionError,
 )
-from .normalizer import AudioNormalizer
+from .normalizer import AudioNormalizer, _probe_sample_rate
 from .downloader import _sanitize_filename
 from .output import OutputWriter
 from .refine import ClaudeRefiner, build_refine_context
@@ -47,6 +47,13 @@ LOGGER = logging.getLogger("transcribe_youtube")
 # Resolve the root-level shim path for switch hints.
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _SHIM_PATH = _PROJECT_ROOT / "transcribe_youtube.py"
+
+
+def run_auto(*args: Any, **kwargs: Any):
+    """`--backend auto` entry point, imported lazily: the other backends never load `transcribe.auto`."""
+    from .auto.pipeline import run_auto as _run_auto
+
+    return _run_auto(*args, **kwargs)
 
 
 def parse_output_formats(raw: str) -> List[str]:
@@ -102,6 +109,16 @@ def _env_flag(name: str) -> bool:
     return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _env_tristate(name: str) -> Optional[bool]:
+    """True / False for an explicit on / off value, None when unset (or unrecognised)."""
+    value = os.getenv(name, "").strip().lower()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    return None
+
+
 def has_transcription_content(result: BackendResult) -> bool:
     if (result.text or "").strip():
         return True
@@ -111,6 +128,70 @@ def has_transcription_content(result: BackendResult) -> bool:
             return True
 
     return False
+
+
+def _log_auto_warnings(meta: Mapping[str, Any]) -> None:
+    """One WARNING per degraded stage (skipped/partial/failed), per note, and for low trust."""
+    for stage in meta.get("stages", []):
+        status = str(stage.get("status", ""))
+        if status not in ("ok", "off"):
+            LOGGER.warning("auto stage '%s': %s", stage.get("name"), status)
+    for note in meta.get("notes", []):
+        LOGGER.warning("auto: %s", note)
+    trust = meta.get("trust") or {}
+    if trust.get("level") == "uncalibrated":
+        LOGGER.info("auto: trust score not calibrated for this profile (%s)", trust.get("reason") or "no validated fit")
+    elif trust.get("level") == "low":
+        LOGGER.warning(
+            "auto: low trust in this transcript (estimated WER %s); review the [unclear: ...] spans",
+            "n/a" if trust.get("estimated_wer") is None else f"{trust['estimated_wer']:.1%}",
+        )
+
+
+def _log_auto_refine(meta: Mapping[str, Any], requested: Optional[bool]) -> None:
+    """Refine outcome of an auto run: the profile is only known after the probe, so this reports it afterwards."""
+    entry = meta.get("profile_entry") or {}
+    if requested is False or entry.get("refine") is not False:
+        return
+    key = meta.get("profile_key")
+    LOGGER.info("refine: off (profile %s)", key)
+    if requested is True:
+        LOGGER.info("refine is off for profile %s; --refine ignored", key)
+
+
+def _split_csv(raw: Optional[str]) -> List[str]:
+    return [item.strip() for item in (raw or "").split(",") if item.strip()]
+
+
+# CLI options the auto pipeline does not use (it has its own VAD chunking and local engines).
+_AUTO_IGNORED_OPTIONS = (
+    ("--model", "model"),
+    ("--chunk-mode", "chunk_mode"),
+    ("--chunk-seconds", "chunk_seconds"),
+    ("--chunk-threshold-minutes", "chunk_threshold_minutes"),
+    ("--openai-max-file-mb", "openai_max_file_mb"),
+    ("--openai-base-url", "openai_base_url"),
+    ("--save-chunks-dir", "save_chunks_dir"),
+    ("--timeout-seconds", "timeout_seconds"),
+    ("--context-info", "context_info"),
+)
+
+
+def _ignored_auto_options(args: argparse.Namespace, user_model: Optional[str]) -> List[str]:
+    """Names of options the user set (differently from their defaults) that `--backend auto` ignores."""
+    defaults = parse_args(["-"])  # "-" is a plain positional for argparse
+    ignored = []
+    for flag, dest in _AUTO_IGNORED_OPTIONS:
+        value = user_model if dest == "model" else getattr(args, dest, None)
+        if value != getattr(defaults, dest, None):
+            ignored.append(flag)
+    return ignored
+
+
+def _no_fallback_message(args: argparse.Namespace) -> str:
+    if getattr(args, "backend", None) == "auto":
+        return "auto pipeline: core stage failed (no engine switching)"
+    return "No automatic fallback was applied (manual switch policy)."
 
 
 def _build_switch_hints(args: argparse.Namespace) -> List[str]:
@@ -254,14 +335,25 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--refine",
         action=argparse.BooleanOptionalAction,
-        default=_env_flag("TRANSCRIBE_REFINE"),
+        default=_env_tristate("TRANSCRIBE_REFINE"),
         help="Fix ASR errors in segment texts with Claude via the logged-in Claude Code CLI "
-        "(opt-in; timestamps unchanged). Default from TRANSCRIBE_REFINE.",
+        "(timestamps unchanged). Unset: off for the existing backends (TRANSCRIBE_REFINE=1 turns it on), "
+        "per profile for --backend auto (gated refine; TRANSCRIBE_REFINE=0 or --no-refine turns it off).",
     )
     parser.add_argument(
         "--refine-model",
         default=os.getenv("TRANSCRIBE_REFINE_MODEL") or DEFAULT_REFINE_MODEL,
         help=f"Claude model alias for --refine (default: {DEFAULT_REFINE_MODEL})",
+    )
+
+    parser.add_argument(
+        "--terms",
+        help="Comma-separated names/terms the speakers likely say (auto backend: bias hints for the refine stage).",
+    )
+    parser.add_argument(
+        "--num-speakers",
+        type=int,
+        help="Exact number of speakers (auto backend): 1 skips diarization, N>1 passes it to the diarizer.",
     )
 
     parser.add_argument(
@@ -294,8 +386,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if args.progress_log_seconds <= 0:
             raise TranscriptionError("--progress-log-seconds must be greater than 0.")
 
+        user_model = args.model
         args.model = args.model or DEFAULT_MODELS[args.backend]
         output_formats = parse_output_formats(args.output_formats)
+        is_auto = args.backend == "auto"
+        refine_on = True if (is_auto and args.refine is None) else bool(args.refine)
 
         LOGGER.info(
             "Run configuration: backend=%s model=%s input=%s language=%s outputs=%s chunk_mode=%s timeout=%ss progress_log_seconds=%s refine=%s",
@@ -307,7 +402,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             args.chunk_mode,
             args.timeout_seconds,
             args.progress_log_seconds,
-            args.refine_model if args.refine else "off",
+            (f"{args.refine_model} (only if the selected profile enables it)" if is_auto else args.refine_model)
+            if refine_on
+            else "off",
         )
         if args.log_file:
             LOGGER.info("Persistent log file enabled: %s", args.log_file)
@@ -316,7 +413,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             validate_openai_output_constraints(args.model, output_formats)
 
         refiner: Optional[ClaudeRefiner] = None
-        if args.refine:
+        if refine_on and not is_auto:  # auto runs its own gated refine (missing CLI skips that stage)
             validate_refine_constraints(args.backend, args.model)
             refiner = ClaudeRefiner(model=args.refine_model)  # fails fast if the claude CLI is missing
 
@@ -362,21 +459,45 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             normalized = AudioNormalizer().normalize(media.local_path, args.backend, temp_dir)
             LOGGER.info("Media summary: source=%s duration_sec=%.2f", media.source, normalized.duration_sec)
 
-            backend = BackendFactory.create(args)
-            with log_stage(LOGGER, "backend_transcription", backend=args.backend, model=args.model):
-                backend_result = transcribe_with_chunking(
-                    args=args,
-                    backend=backend,
-                    normalized=normalized,
-                    context_info=context_info,
-                    generation=generation,
-                    temp_dir=temp_dir,
-                )
-            if not has_transcription_content(backend_result):
-                raise TranscriptionError(
-                    "Transcription produced no text content. "
-                    "Verify the input URL/media, backend/model, and language hint."
-                )
+            auto_meta: Optional[Dict[str, Any]] = None
+            if is_auto:
+                terms = _split_csv(args.terms) + [
+                    w for w in _split_csv(args.hotwords) if w not in _split_csv(args.terms)
+                ]
+                ignored = _ignored_auto_options(args, user_model)
+                if ignored:
+                    LOGGER.info("auto backend ignores these options: %s", ", ".join(ignored))
+                if args.num_speakers is not None and args.num_speakers <= 0:
+                    raise TranscriptionError("--num-speakers must be greater than 0.")
+                with log_stage(LOGGER, "auto_pipeline"):
+                    backend_result, auto_meta = run_auto(
+                        normalized.path,
+                        dict(media.metadata),
+                        language=args.language,
+                        terms=terms,
+                        num_speakers=args.num_speakers,
+                        refine=refine_on,
+                        refine_model=args.refine_model,
+                        original_sample_rate=_probe_sample_rate(media.local_path),
+                    )
+                _log_auto_warnings(auto_meta)
+                _log_auto_refine(auto_meta, args.refine)
+            else:
+                backend = BackendFactory.create(args)
+                with log_stage(LOGGER, "backend_transcription", backend=args.backend, model=args.model):
+                    backend_result = transcribe_with_chunking(
+                        args=args,
+                        backend=backend,
+                        normalized=normalized,
+                        context_info=context_info,
+                        generation=generation,
+                        temp_dir=temp_dir,
+                    )
+                if not has_transcription_content(backend_result):
+                    raise TranscriptionError(
+                        "Transcription produced no text content. "
+                        "Verify the input URL/media, backend/model, and language hint."
+                    )
 
             if refiner is not None:
                 refine_context = build_refine_context(
@@ -394,7 +515,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 else normalized.duration_sec
             )
             metadata: Dict[str, Any] = dict(media.metadata)
-            if isinstance(backend_result.raw, dict):
+            if auto_meta is not None:
+                metadata["auto"] = auto_meta
+                if auto_meta.get("no_speech"):
+                    metadata["no_speech"] = True
+            elif isinstance(backend_result.raw, dict):
                 chunking = backend_result.raw.get("chunking")
                 if isinstance(chunking, dict):
                     metadata["chunking"] = chunking
@@ -433,14 +558,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     except TranscriptionError as exc:
         LOGGER.error(str(exc))
-        LOGGER.error("No automatic fallback was applied (manual switch policy).")
+        LOGGER.error(_no_fallback_message(args))
         for hint in _build_switch_hints(args):
             LOGGER.error("Try: %s", hint)
         return 1
     except Exception as exc:
         LOGGER.error("Unexpected error: %s", exc)
         LOGGER.debug("Unhandled exception details", exc_info=True)
-        LOGGER.error("No automatic fallback was applied (manual switch policy).")
+        LOGGER.error(_no_fallback_message(args))
         for hint in _build_switch_hints(args):
             LOGGER.error("Try: %s", hint)
         return 1

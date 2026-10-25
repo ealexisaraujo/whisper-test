@@ -179,3 +179,10 @@ poetry.toml
 pyrightconfig.json
 
 # End of https://www.toptal.com/developers/gitignore/api/python
+
+# Eval suite: per-item manifests and results embed reference transcripts (TED-LIUM is CC BY-NC-ND) and local paths.
+# They are local-only; regenerate with `benchmarks.suite.datasets prepare` / `benchmarks.suite.run_suite`.
+# Only the aggregate `*.summary.json` files are committed.
+benchmarks/suite/manifests/*.jsonl
+benchmarks/suite/results/*.json
+!benchmarks/suite/results/*.summary.json

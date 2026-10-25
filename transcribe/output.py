@@ -71,6 +71,8 @@ def _render_txt(payload: Mapping[str, Any]) -> str:
 def _render_srt(payload: Mapping[str, Any]) -> str:
     segments = payload.get("segments") or []
     if not segments:
+        if (payload.get("metadata") or {}).get("no_speech"):
+            return ""  # auto pipeline: no speech detected is a valid (empty) result
         raise CapabilityError(
             "SRT output requires timestamped segments, but none were returned by this backend/model."
         )

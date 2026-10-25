@@ -6,6 +6,7 @@ import logging
 import shlex
 import subprocess
 from pathlib import Path
+from typing import Optional
 
 from logger_utils import log_stage
 
@@ -32,6 +33,26 @@ def _probe_duration_seconds(path: Path) -> float:
         return 0.0
 
 
+def _probe_sample_rate(path: Path) -> Optional[int]:
+    """Sample rate in Hz of the first audio stream, or None when it cannot be probed."""
+    command = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-select_streams",
+        "a:0",
+        "-show_entries",
+        "stream=sample_rate",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        str(path),
+    ]
+    try:
+        return int(subprocess.check_output(command, text=True).strip().splitlines()[0])
+    except Exception:
+        return None
+
+
 class AudioNormalizer:
     """Converts any media input into backend-appropriate WAV for predictable behavior."""
 
@@ -39,7 +60,11 @@ class AudioNormalizer:
         "mlx-whisper": 16000,
         "openai": 16000,
         "eg2": 16000,
+        "auto": 16000,
     }
+
+    # EBU R128 loudness normalization (integrated -23 LUFS), applied only for the auto pipeline.
+    AUTO_LOUDNORM = "loudnorm=I=-23:TP=-1:LRA=11"
 
     def normalize(self, media_path: Path, backend: str, output_dir: Path) -> NormalizedMedia:
         sample_rate = self.SAMPLE_RATES[backend]
@@ -52,6 +77,7 @@ class AudioNormalizer:
             "-vn",
             "-ac",
             "1",
+            *(["-af", self.AUTO_LOUDNORM] if backend == "auto" else []),
             "-ar",
             str(sample_rate),
             "-c:a",

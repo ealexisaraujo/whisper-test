@@ -1,0 +1,49 @@
+{
+  "minutes": {
+    "en_clean": 40.88,
+    "en_talks": 39.0,
+    "en_accents": 42.7,
+    "en_business": 38.01,
+    "en_meeting": 35.71,
+    "es_fleurs": 40.88,
+    "es_mls": 40.98,
+    "es_dialects": 30.33,
+    "en_noise": 30.69,
+    "es_noise": 20.06,
+    "en_phone": 20.04,
+    "es_phone": 20.06,
+    "nospeech": 10.0
+  },
+  "items": {
+    "en_clean": 10,
+    "en_talks": 7,
+    "en_accents": 9,
+    "en_business": 9,
+    "en_meeting": 9,
+    "es_fleurs": 8,
+    "es_mls": 8,
+    "es_dialects": 6,
+    "en_noise": 7,
+    "es_noise": 4,
+    "en_phone": 4,
+    "es_phone": 4,
+    "nospeech": 30
+  },
+  "smoke_minutes": 30.98,
+  "gaps": {
+    "code_switching": "no es-en code-switching slice: BrunoHays/Bangor-Miami-Spanish-English-Corpus is the only ungated corpus found, but it ships whole 30 min conversations with CHAT-annotated transcripts (xxx, www, &=laugh, overlap codes) and no timestamps, so there is no trustworthy reference that can be cut to item length",
+    "nospeech_music": "ESC-50 has no music category, so the nospeech slice has silence, room tone, white noise and ambient scenes only",
+    "es_dialects:peruvian": "rcastrovexler/openslr-slr73-peruvian-spanish is gated (auto approval) and HF_TOKEN is not set",
+    "es_dialects:puerto_rican": "rcastrovexler/openslr-slr74-puertorican-spanish is gated (auto approval) and HF_TOKEN is not set",
+    "es_dialects:venezuelan": "rcastrovexler/openslr-slr75-venezuelan-spanish is gated (auto approval) and HF_TOKEN is not set"
+  },
+  "dropped_segments": {
+    "en_clean": 0,
+    "en_accents": 65,
+    "en_business": 2,
+    "en_meeting": 0,
+    "es_fleurs": 0,
+    "es_mls": 0,
+    "es_dialects": 0
+  }
+}

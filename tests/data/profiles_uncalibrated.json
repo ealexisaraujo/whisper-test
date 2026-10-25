@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "generated_from": null,
+  "profiles": {
+    "en": {
+      "engines": [
+        "qwen3-asr-1.7b",
+        "whisper-large-v3"
+      ],
+      "pick": true,
+      "verify": true,
+      "refine": true,
+      "margin": 0.05,
+      "solid_min_prob": 0.5,
+      "evidence": null,
+      "trust_spearman": 0.8
+    },
+    "es": {
+      "engines": [
+        "qwen3-asr-1.7b",
+        "whisper-large-v3"
+      ],
+      "pick": true,
+      "verify": true,
+      "refine": true,
+      "margin": 0.05,
+      "solid_min_prob": 0.5,
+      "evidence": null,
+      "trust_spearman": 0.8
+    },
+    "other": {
+      "engines": [
+        "whisper-large-v3",
+        "qwen3-asr-1.7b"
+      ],
+      "pick": true,
+      "verify": true,
+      "refine": true,
+      "margin": 0.05,
+      "solid_min_prob": 0.5,
+      "evidence": null,
+      "trust_spearman": 0.8
+    }
+  },
+  "default": {
+    "engines": [
+      "qwen3-asr-1.7b",
+      "whisper-large-v3"
+    ],
+    "pick": true,
+    "verify": true,
+    "refine": true,
+    "margin": 0.05,
+    "solid_min_prob": 0.5,
+    "evidence": null,
+    "trust_spearman": 0.8
+  },
+  "trust": null
+}

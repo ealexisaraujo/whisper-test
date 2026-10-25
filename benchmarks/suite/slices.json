@@ -1,0 +1,128 @@
+{
+  "version": 1,
+  "data_root": "~/.cache/whisper_translate/suite",
+  "smoke_item_seconds": 120,
+  "smoke_target_minutes": 30,
+  "slices": {
+    "en_clean": {
+      "source": "openslr/librispeech_asr (test-clean 75 % of the minutes, test-other 25 %)",
+      "config": "clean/test + other/test, first utterances of evenly spaced speakers, 3 consecutive utterances per speaker turn",
+      "minutes": 40,
+      "lang": "en",
+      "condition": "clean",
+      "note": "long-form multi-speaker concatenation (build_longform); speaker turns known"
+    },
+    "en_talks": {
+      "source": "distil-whisper/tedlium-long-form",
+      "config": "test + validation talks of at most 10 minutes (whole talks, no cutting)",
+      "minutes": 40,
+      "lang": "en",
+      "condition": "clean",
+      "note": "lower-case, unpunctuated reference; single speaker per item"
+    },
+    "en_accents": {
+      "source": "edinburghcstr/edacc",
+      "config": "test, one block of consecutive utterances (one conversation) from each of several shards, IGNORE_TIME_SEGMENT_IN_SCORING dropped",
+      "minutes": 40,
+      "lang": "en",
+      "condition": "accent",
+      "note": "dialogues of non-native / regional English speakers; meta.accent per item"
+    },
+    "en_business": {
+      "source": "distil-whisper/earnings22",
+      "config": "chunked/test, a contiguous window of one earnings call per shard",
+      "minutes": 40,
+      "lang": "en",
+      "condition": "clean",
+      "note": "segments containing <inaudible>/<unk> tags are dropped; gaps between segments capped at 1 s; cased and punctuated verbatim reference"
+    },
+    "en_meeting": {
+      "source": "edinburghcstr/ami",
+      "config": "sdm/test, a window of one meeting each (single distant microphone), segments placed on the real timeline",
+      "minutes": 40,
+      "lang": "en",
+      "condition": "meeting",
+      "note": "diarizers-community/ami has the speaker turns but no transcript, so the transcribed edinburghcstr/ami segments supply both; only transcribed speech is present (untranscribed gaps are silence); overlapped speech is kept"
+    },
+    "es_fleurs": {
+      "source": "google/fleurs",
+      "config": "es_419 test",
+      "minutes": 40,
+      "lang": "es",
+      "condition": "clean",
+      "note": "reference is raw_transcription (cased, punctuated); every sentence is a different speaker, so speaker turns are null"
+    },
+    "es_mls": {
+      "source": "facebook/multilingual_librispeech",
+      "config": "spanish test, 3 consecutive utterances per speaker turn",
+      "minutes": 40,
+      "lang": "es",
+      "condition": "clean",
+      "note": "audiobooks; lower-case unpunctuated reference; speaker turns known"
+    },
+    "es_dialects": {
+      "source": "ylacombe/google-chilean-spanish, google-colombian-spanish, google-argentinian-spanish (the OpenSLR 71/72/61 crowdsourced Google recordings)",
+      "config": "train, female and male configs, consecutive utterances",
+      "minutes": 30,
+      "lang": "es",
+      "condition": "accent",
+      "note": "OpenSLR 73/74/75 (Peruvian, Puerto Rican, Venezuelan) mirrors are gated: see gaps"
+    },
+    "en_noise": {
+      "source": "derived from the en_clean test-clean items",
+      "config": "white / pink / babble noise (babble = 6 other en_clean items) at 0, 5, 10 dB SNR; one noise type and SNR per item",
+      "minutes": 30,
+      "lang": "en",
+      "condition": "noise",
+      "note": "paired with the clean items: same reference, split inherited from the source item"
+    },
+    "es_noise": {
+      "source": "derived from the es_fleurs items",
+      "config": "as en_noise",
+      "minutes": 20,
+      "lang": "es",
+      "condition": "noise",
+      "note": "paired with es_fleurs"
+    },
+    "en_phone": {
+      "source": "derived from the en_clean test-clean items",
+      "config": "phone_band: 300-3400 Hz band limit, 8 kHz mu-law round trip, back at 16 kHz",
+      "minutes": 20,
+      "lang": "en",
+      "condition": "phone",
+      "note": "paired with the clean items"
+    },
+    "es_phone": {
+      "source": "derived from the es_fleurs items",
+      "config": "as en_phone",
+      "minutes": 20,
+      "lang": "es",
+      "condition": "phone",
+      "note": "paired with es_fleurs"
+    },
+    "nospeech": {
+      "source": "synthetic silence / room tone / white noise + ashraq/esc50 ambient scenes",
+      "config": "30 clips x 20 s: 5 digital silence, 5 room tone, 10 white noise at -40..-20 dBFS, 10 ESC-50 ambient scenes (4 clips of one non-human category each)",
+      "minutes": 10,
+      "lang": "none",
+      "condition": "nospeech",
+      "note": "reference is the empty string; ESC-50 has no music category, so there is no music clip"
+    }
+  },
+  "gaps": {
+    "code_switching": "no es-en code-switching slice: BrunoHays/Bangor-Miami-Spanish-English-Corpus is the only ungated corpus found, but it ships whole 30 min conversations with CHAT-annotated transcripts (xxx, www, &=laugh, overlap codes) and no timestamps, so there is no trustworthy reference that can be cut to item length",
+    "nospeech_music": "ESC-50 has no music category, so the nospeech slice has silence, room tone, white noise and ambient scenes only",
+    "es_dialects:peruvian": "rcastrovexler/openslr-slr73-peruvian-spanish is gated (auto approval) and HF_TOKEN is not set",
+    "es_dialects:puerto_rican": "rcastrovexler/openslr-slr74-puertorican-spanish is gated (auto approval) and HF_TOKEN is not set",
+    "es_dialects:venezuelan": "rcastrovexler/openslr-slr75-venezuelan-spanish is gated (auto approval) and HF_TOKEN is not set"
+  },
+  "dropped_segments": {
+    "en_clean": 0,
+    "en_accents": 65,
+    "en_business": 2,
+    "en_meeting": 0,
+    "es_fleurs": 0,
+    "es_mls": 0,
+    "es_dialects": 0
+  }
+}

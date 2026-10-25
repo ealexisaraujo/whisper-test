@@ -4,3 +4,24 @@ openai==2.20.0
 mlx-whisper>=0.4.0
 coremltools>=9.0; sys_platform == "darwin"
 soundfile>=0.12
+# --- `--backend auto` pipeline (see docs/agents/auto-pipeline-spike.md) ---
+# NOTE: these lines were only verified inside the existing shared .venv on Apple Silicon (macOS 26.6.2, Python 3.11.1),
+# never on a fresh install.
+mlx-lm>=0.32  # local picker LLM (Gemma 4 26B-A4B 4-bit)
+mlx-audio>=0.6  # Qwen3-ASR 1.7B and Qwen3-ForcedAligner
+parakeet-mlx>=0.5  # Parakeet TDT 0.6B v3 (en+es), token timestamps and confidence
+silero-vad>=6.2  # speech map / VAD gating
+pyannote.audio>=4.0  # diarization (community-1 needs HF_TOKEN; skipped without it)
+pronouncing>=0.3  # phonetic gates for the refine stage (CMU dict)
+jellyfish>=1.3  # phonetic/string distances for the refine gates
+datasets>=5.1  # eval-suite audio sources (decode with decode=False: torchcodec needs ffmpeg<=7)
+huggingface_hub>=2.3  # model and dataset downloads (mlx-audio 0.6 needs >=1)
+transformers>=5.14  # required by mlx-lm 0.32 and mlx-audio 0.6
+# torch, torchaudio and torchcodec are installed by the three lines below, pinned to one matching family (tested: torch
+# 2.10.0); pip's default torchaudio 2.11 / torchcodec 0.17 did not match torch 2.10 in the spike (torchcodec failed to load).
+torch>=2.10,<2.11  # EG2 and pyannote run on it
+torchaudio>=2.10,<2.11  # pyannote; must match the torch minor
+torchcodec>=0.10,<0.11  # pulled in by pyannote; matches torch 2.10 but still needs FFmpeg 4-7 to decode (unused here)
+librosa>=0.11  # spike.py `_decode` resamples non-16 kHz dataset audio; parakeet-mlx also requires it
+jiwer>=4.0  # WER in benchmarks
+whisper-normalizer>=0.1.15  # text normalization for WER

@@ -1,0 +1,241 @@
+{
+  "version": 1,
+  "generated_from": "benchmarks/suite/results/auto-full.json",
+  "profiles": {
+    "en": {
+      "engines": [
+        "qwen3-asr-1.7b"
+      ],
+      "pick": false,
+      "verify": false,
+      "refine": false,
+      "margin": 0.05,
+      "solid_min_prob": 0.5,
+      "evidence": "benchmarks/suite/results/auto-full.json",
+      "trust_spearman": 0.24
+    },
+    "es": {
+      "engines": [
+        "whisper-large-v3"
+      ],
+      "pick": false,
+      "verify": false,
+      "refine": false,
+      "margin": 0.05,
+      "solid_min_prob": 0.5,
+      "evidence": "benchmarks/suite/results/auto-full.json",
+      "trust_spearman": 0.63
+    },
+    "other": {
+      "engines": [
+        "whisper-large-v3"
+      ],
+      "pick": false,
+      "verify": false,
+      "refine": false,
+      "margin": 0.05,
+      "solid_min_prob": 0.5,
+      "evidence": "manual: unvalidated; pick/verify measured harmful on en/es"
+    },
+    "en-noisy": {
+      "engines": [
+        "qwen3-asr-1.7b"
+      ],
+      "pick": false,
+      "verify": false,
+      "refine": false,
+      "margin": 0.05,
+      "solid_min_prob": 0.5,
+      "evidence": "benchmarks/suite/results/auto-full.json",
+      "trust_spearman": 0.24
+    },
+    "en-phone": {
+      "engines": [
+        "qwen3-asr-1.7b"
+      ],
+      "pick": false,
+      "verify": false,
+      "refine": false,
+      "margin": 0.05,
+      "solid_min_prob": 0.5,
+      "evidence": "benchmarks/suite/results/auto-full.json",
+      "trust_spearman": 0.24
+    },
+    "es-noisy": {
+      "engines": [
+        "whisper-large-v3"
+      ],
+      "pick": false,
+      "verify": false,
+      "refine": false,
+      "margin": 0.05,
+      "solid_min_prob": 0.5,
+      "evidence": "benchmarks/suite/results/auto-full.json",
+      "trust_spearman": 0.63
+    },
+    "es-phone": {
+      "engines": [
+        "whisper-large-v3"
+      ],
+      "pick": false,
+      "verify": false,
+      "refine": false,
+      "margin": 0.05,
+      "solid_min_prob": 0.5,
+      "evidence": "benchmarks/suite/results/auto-full.json",
+      "trust_spearman": 0.63
+    }
+  },
+  "default": {
+    "engines": [
+      "qwen3-asr-1.7b",
+      "whisper-large-v3"
+    ],
+    "pick": true,
+    "verify": true,
+    "refine": true,
+    "margin": 0.05,
+    "solid_min_prob": 0.5,
+    "evidence": null
+  },
+  "trust": {
+    "coef": {
+      "intercept": 1.732567995230951,
+      "weights": {
+        "agreement_rate": -0.7346855403762516,
+        "unclear_rate": 4.196592884546248,
+        "mean_confidence": -1.0207521228414533,
+        "hallucination_flag_rate": 0.7551732249143713
+      }
+    },
+    "fit": "least squares of per-file dev WER on trust features",
+    "evidence": "benchmarks/suite/results/auto-full.json"
+  },
+  "calibration": {
+    "en": {
+      "status": "validated",
+      "slices": [
+        "en_accents",
+        "en_business",
+        "en_clean",
+        "en_meeting",
+        "en_talks"
+      ],
+      "dev_wer": {
+        "auto:single-a": 0.131391762356279,
+        "auto:single-b": 0.15285556414122828,
+        "auto:fused": 0.131391762356279,
+        "auto:+pick": 0.13124790480775966,
+        "auto:+verify": 0.14584975465286396,
+        "auto:+refine": 0.14577169673388807
+      },
+      "decision": "single engine (auto:single-a): fusion is not significantly better",
+      "trust_spearman": 0.24
+    },
+    "en-noisy": {
+      "status": "validated",
+      "slices": [
+        "en_noise"
+      ],
+      "dev_wer": {
+        "auto:single-a": 0.1266222536740029,
+        "auto:single-b": 0.14588281305057574,
+        "auto:fused": 0.1266222536740029,
+        "auto:+pick": 0.12819065560175977,
+        "auto:+verify": 0.1239562377200887,
+        "auto:+refine": 0.1239562377200887
+      },
+      "decision": "single engine (auto:single-a): fusion is not significantly better",
+      "trust_spearman": 0.24
+    },
+    "en-phone": {
+      "status": "validated",
+      "slices": [
+        "en_phone"
+      ],
+      "dev_wer": {
+        "auto:single-a": 0.018433733285741744,
+        "auto:single-b": 0.03105351308311139,
+        "auto:fused": 0.018433733285741744,
+        "auto:+pick": 0.019466791136981413,
+        "auto:+verify": 0.02433863705005354,
+        "auto:+refine": 0.02433863705005354
+      },
+      "decision": "single engine (auto:single-a): fusion is not significantly better",
+      "trust_spearman": 0.24
+    },
+    "es": {
+      "status": "validated",
+      "slices": [
+        "es_dialects",
+        "es_fleurs",
+        "es_mls"
+      ],
+      "dev_wer": {
+        "auto:single-a": 0.04061769328568031,
+        "auto:single-b": 0.036395156813643914,
+        "auto:fused": 0.04061769328568031,
+        "auto:+pick": 0.03281966975580692,
+        "auto:+verify": 0.031900035565010386,
+        "auto:+refine": 0.031900035565010386
+      },
+      "decision": "single engine (auto:single-b): fusion is not significantly better",
+      "trust_spearman": 0.63
+    },
+    "es-noisy": {
+      "status": "validated",
+      "slices": [
+        "es_noise"
+      ],
+      "dev_wer": {
+        "auto:single-a": 0.07924607796971425,
+        "auto:single-b": 0.05992961411683065,
+        "auto:fused": 0.07924607796971425,
+        "auto:+pick": 0.06767701801779474,
+        "auto:+verify": 0.07032888051748494,
+        "auto:+refine": 0.07032888051748494
+      },
+      "decision": "single engine (auto:single-b): fusion is not significantly better",
+      "trust_spearman": 0.63
+    },
+    "es-phone": {
+      "status": "validated",
+      "slices": [
+        "es_phone"
+      ],
+      "dev_wer": {
+        "auto:single-a": 0.043659074574338895,
+        "auto:single-b": 0.035344122530917746,
+        "auto:fused": 0.043659074574338895,
+        "auto:+pick": 0.034672482589407416,
+        "auto:+verify": 0.03987211578973457,
+        "auto:+refine": 0.03987211578973457
+      },
+      "decision": "single engine (auto:single-b): fusion is not significantly better",
+      "trust_spearman": 0.63
+    },
+    "other": {
+      "status": "unvalidated",
+      "reason": "no slices map to this key; set by hand to Whisper large-v3 alone with every stage off because pick/verify measured harmful on en/es"
+    },
+    "trust": {
+      "status": "validated",
+      "rows": 43
+    },
+    "trust_spearman_note": "Hand-recorded from docs/agents/auto-pipeline-results.md (configured profiles, test split): English (Qwen3 alone) 0.24, n = 27; Spanish (Whisper alone) 0.63, n = 15; en-*/es-* variants inherit their language's value. Both are below 0.7, so trust is reported as 'uncalibrated' for every shipped profile; `other` has no trust fit at all. make_profiles recomputes trust_spearman per profile from the dev rows of the rung the profile runs."
+  },
+  "trust_fit": {
+    "system": "auto:+refine",
+    "rows": 43,
+    "features": [
+      "agreement_rate",
+      "unclear_rate",
+      "mean_confidence",
+      "hallucination_flag_rate"
+    ],
+    "dropped": [
+      "skipped_stages"
+    ],
+    "status": "ok"
+  }
+}

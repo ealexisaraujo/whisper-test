@@ -265,7 +265,7 @@ def test_cli_refine_flags(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("TRANSCRIBE_REFINE", raising=False)
     monkeypatch.delenv("TRANSCRIBE_REFINE_MODEL", raising=False)
     args = parse_args(["video.mp4"])
-    assert args.refine is False
+    assert args.refine is None  # unset: off for existing backends, on for auto
     assert args.refine_model == "sonnet"
 
     args = parse_args(["video.mp4", "--refine", "--refine-model", "opus"])

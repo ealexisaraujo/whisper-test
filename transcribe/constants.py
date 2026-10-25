@@ -1,12 +1,13 @@
 """Shared constants for backends, models, and output formats."""
 
-SUPPORTED_BACKENDS = ("mlx-whisper", "openai", "eg2")
+SUPPORTED_BACKENDS = ("mlx-whisper", "openai", "eg2", "auto")
 SUPPORTED_OUTPUT_FORMATS = ("txt", "srt", "json")
 
 DEFAULT_MODELS = {
     "mlx-whisper": "mlx-community/whisper-turbo",
     "openai": "gpt-4o-transcribe",
     "eg2": "eg2demo-v5",  # EmbeddingGemma 2 Core ML models; cache dir overridable via EG2_MODEL_DIR
+    "auto": "auto",  # pipeline of local engines chosen per audio profile (transcribe/profiles.json)
 }
 
 EG2_LANGUAGES = {"en"}  # closed lowercase-ASCII English vocabulary (reader_words.json)
