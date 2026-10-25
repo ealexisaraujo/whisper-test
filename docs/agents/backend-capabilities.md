@@ -30,8 +30,18 @@ Execution policy:
 - Ignores context/hotwords (fixed vocabulary); handles long audio itself, so auto-chunking is skipped
 - Produces `txt`/`srt`/`json`; JSON `raw.words` carries per-word times and confidence
 
+### Refine stage (opt-in, any backend)
+- `--refine` (or `TRANSCRIBE_REFINE=1`) sends the final segment texts to Claude through the locally installed, logged-in Claude Code CLI (`claude -p` headless, no tools/plugins/MCP) to fix ASR errors: misheard words, homophones, broken word boundaries, names/brands (using the video title, channel and description as context), casing/punctuation.
+- Timestamps, speakers and segment count are never changed; only `text`. It is not a backend fallback: the selected backend's output is refined, nothing is re-transcribed.
+- Model: `--refine-model` / `TRANSCRIBE_REFINE_MODEL`, default alias `sonnet`. Binary: `CLAUDE_BIN` or `claude` on PATH; missing binary raises `CapabilityError` before transcription starts.
+- Batches of 60 segments, 4 in parallel, each with the previous 5 segments as read-only context. EG2 low-confidence words are passed as `uncertain` hints.
+- Guard: a segment whose refined text diverges too much from the original (word-level similarity < 0.5, char-level < 0.4 for segments under 4 words) or comes back empty keeps the original text.
+- A batch that fails twice raises `TranscriptionError` (no silent skip). Needs segmented output: OpenAI text-only models (`gpt-4o-transcribe`, `gpt-4o-mini-transcribe`) are rejected with `CapabilityError`.
+- JSON `metadata.refine` records model, batches, changed/guarded counts, `cost_usd`, `duration_s` and `original_texts`.
+
 Quick choice:
 - Apple Silicon Mac, fastest English draft: `eg2`.
+- Fast English with fewer errors: `eg2 --refine`.
 - Apple Silicon Mac, best local accuracy: `mlx-whisper`.
 - Need cloud API speed: `openai`.
 - Need OpenAI + `srt`: `whisper-1` or `gpt-4o-transcribe-diarize`.
@@ -58,7 +68,17 @@ Politica de ejecucion:
 - Requiere `OPENAI_API_KEY`
 - Auto-chunk protege contra cargas demasiado grandes en `--chunk-mode auto`
 
+### Etapa refine (opcional, cualquier backend)
+- `--refine` (o `TRANSCRIBE_REFINE=1`) envia los textos finales de los segmentos a Claude mediante el CLI de Claude Code instalado localmente y con sesion iniciada (`claude -p` headless, sin tools/plugins/MCP) para corregir errores de ASR: palabras mal oidas, homofonos, limites de palabra rotos, nombres/marcas (usando titulo, canal y descripcion del video como contexto), mayusculas/puntuacion.
+- Nunca cambia timestamps, hablantes ni numero de segmentos; solo `text`. No es un fallback de backend: se refina la salida del backend elegido, no se vuelve a transcribir.
+- Modelo: `--refine-model` / `TRANSCRIBE_REFINE_MODEL`, alias por defecto `sonnet`. Binario: `CLAUDE_BIN` o `claude` en PATH; si falta, `CapabilityError` antes de transcribir.
+- Lotes de 60 segmentos, 4 en paralelo, cada uno con los 5 segmentos previos como contexto de solo lectura. Las palabras de baja confianza de EG2 se envian como pistas `uncertain`.
+- Guarda: si el texto refinado se aleja demasiado del original (similitud por palabras < 0.5; por caracteres < 0.4 en segmentos de menos de 4 palabras) o llega vacio, se conserva el original.
+- Un lote que falla dos veces lanza `TranscriptionError` (nada se omite en silencio). Requiere salida segmentada: los modelos OpenAI solo-texto (`gpt-4o-transcribe`, `gpt-4o-mini-transcribe`) se rechazan con `CapabilityError`.
+- El JSON guarda en `metadata.refine`: modelo, lotes, segmentos cambiados/protegidos, `cost_usd`, `duration_s` y `original_texts`.
+
 Seleccion rapida:
 - Mac con Apple Silicon, mejor velocidad local: `mlx-whisper`.
+- Ingles rapido con menos errores: `eg2 --refine`.
 - Velocidad via API cloud: `openai`.
 - OpenAI + `srt`: `whisper-1` o `gpt-4o-transcribe-diarize`.

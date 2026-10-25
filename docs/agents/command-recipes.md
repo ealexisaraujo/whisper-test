@@ -50,6 +50,15 @@ python transcribe_youtube.py ./meeting.mp4 \
   --language en
 ```
 
+Fast English draft + Claude refine (requires the logged-in Claude Code CLI):
+```bash
+python transcribe_youtube.py "https://www.youtube.com/watch?v=<id>" \
+  --backend eg2 \
+  --refine
+# cheaper/faster refine model, or enable by default via TRANSCRIBE_REFINE=1 in .env
+python transcribe_youtube.py ./talk.mp4 --backend eg2 --refine --refine-model haiku
+```
+
 Disable chunking:
 ```bash
 python transcribe_youtube.py ./audio.wav --backend mlx-whisper --chunk-mode off
@@ -124,6 +133,15 @@ python transcribe_youtube.py ./meeting.mp4 \
   --backend mlx-whisper \
   --model mlx-community/whisper-large-v3 \
   --language en
+```
+
+Borrador rapido en ingles + refine con Claude (requiere el CLI de Claude Code con sesion iniciada):
+```bash
+python transcribe_youtube.py "https://www.youtube.com/watch?v=<id>" \
+  --backend eg2 \
+  --refine
+# modelo de refine mas barato/rapido, o activarlo por defecto con TRANSCRIBE_REFINE=1 en .env
+python transcribe_youtube.py ./talk.mp4 --backend eg2 --refine --refine-model haiku
 ```
 
 Desactivar chunking:

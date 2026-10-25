@@ -30,3 +30,6 @@ OPENAI_TIMESTAMP_MODELS = {
     "whisper-1",
     "gpt-4o-transcribe-diarize",
 }
+
+# Refine stage (opt-in): Claude model alias passed to `claude --model`; never pin a version id here.
+DEFAULT_REFINE_MODEL = "sonnet"

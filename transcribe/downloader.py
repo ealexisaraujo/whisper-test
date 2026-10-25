@@ -120,9 +120,17 @@ class MediaDownloader:
             audio_size = "unknown"
         LOGGER.info("Downloaded audio file: %s (size=%s)", audio_path, audio_size)
 
+        metadata: Dict[str, Any] = {"platform": platform, f"{platform}_id": video_id, f"{platform}_title": title}
+        # Extra context for the optional refine stage (names/terms); only stored when present.
+        channel = info.get("channel") or info.get("uploader")
+        if channel:
+            metadata[f"{platform}_channel"] = channel
+        if info.get("description"):
+            metadata[f"{platform}_description"] = info["description"]
+
         return SourceMedia(
             source=url,
             local_path=audio_path,
             source_name=_sanitize_filename(title),
-            metadata={"platform": platform, f"{platform}_id": video_id, f"{platform}_title": title},
+            metadata=metadata,
         )

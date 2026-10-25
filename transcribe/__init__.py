@@ -27,9 +27,11 @@ from .cli import (
     parse_args,
     parse_output_formats,
     validate_openai_output_constraints,
+    validate_refine_constraints,
 )
 from .constants import (
     DEFAULT_MODELS,
+    DEFAULT_REFINE_MODEL,
     OPENAI_PROMPT_CAPABLE_MODELS,
     OPENAI_TIMESTAMP_MODELS,
     OPENAI_TRANSCRIPTION_MODELS,
@@ -47,6 +49,13 @@ from .models import (
 )
 from .normalizer import AudioNormalizer
 from .output import OutputWriter, format_srt_timestamp
+from .refine import (
+    ClaudeRefiner,
+    build_refine_context,
+    map_uncertain_words,
+    refine_diverges,
+    resolve_claude_bin,
+)
 from .resolver import InputResolver
 
 __all__ = [
@@ -61,6 +70,7 @@ __all__ = [
     "SUPPORTED_BACKENDS",
     "SUPPORTED_OUTPUT_FORMATS",
     "DEFAULT_MODELS",
+    "DEFAULT_REFINE_MODEL",
     "OPENAI_TRANSCRIPTION_MODELS",
     "OPENAI_PROMPT_CAPABLE_MODELS",
     "OPENAI_TIMESTAMP_MODELS",
@@ -74,11 +84,17 @@ __all__ = [
     "EG2Backend",
     "BackendFactory",
     "OutputWriter",
+    "ClaudeRefiner",
     # Functions
     "parse_args",
     "main",
     "build_context_info",
     "validate_openai_output_constraints",
+    "validate_refine_constraints",
+    "build_refine_context",
+    "map_uncertain_words",
+    "refine_diverges",
+    "resolve_claude_bin",
     "parse_output_formats",
     "has_transcription_content",
     "run_selected_backend",

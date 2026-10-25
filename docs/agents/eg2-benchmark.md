@@ -69,6 +69,24 @@ function words (`and→in`, `their→the`), and names (`OpenAI→AI/opening/eye`
 | Publishable transcript, names/brands, summaries you will quote | `--backend mlx-whisper` |
 | Spanish or any non-English audio | `--backend mlx-whisper` |
 
+## Refine stage (`--refine`, Claude via headless `claude -p`) — measured 2026-10-24
+
+| Test | EG2 | EG2 + refine | Whisper turbo | Refine cost / time |
+|---|---:|---:|---:|---|
+| LibriSpeech test-clean, 12 chapters (0.67 h), WER | 3.95 % | **1.44 %** | ≈1.23 % (same chapters) | $0.63 ($0.93 per audio hour), 239 s |
+| YouTube `zA4aBDzj_60` (22.4 min), disagreement vs Whisper | 10.0 % | **6.8 %** | reference | $0.33, 47 s, 172/448 segments changed |
+
+Run with `benchmarks/bench_asr.py --engines eg2 --limit 12 --refine` (model alias `sonnet`).
+
+How to read it:
+- **The LibriSpeech gain is inflated.** LibriSpeech is public-domain books that the model probably saw in training. It restored
+  wording that can't be inferred from the audio errors (`flour fat sauce` → `flour fattened sauce`, exactly as in the reference).
+  The YouTube talk is the more honest number: about a third fewer disagreements.
+- **Context can plant wrong names.** In the talk, EG2 heard "the team at from…". Refine wrote "at Meta" because the description
+  mentions Meta. The speaker said OpenAI. Treat names inserted by refine as unverified.
+- **Speed:** refine takes about 2–6 min per audio hour (4 parallel calls). EG2 + refine is no longer faster than mlx-whisper
+  (about 3.6 min/h). Its advantage is fixing names and terms using the title and description.
+
 ## Ideas to close the accuracy gap (not implemented)
 
 1. Beam search over the 64 re-ranked candidates per frame, with a word n-gram LM (the vocabulary is closed, so an LM is cheap).

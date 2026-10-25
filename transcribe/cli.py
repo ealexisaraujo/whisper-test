@@ -15,7 +15,14 @@ from logger_utils import configure_logging, log_stage
 
 from .backends import BackendFactory
 from .chunking import transcribe_with_chunking
-from .constants import DEFAULT_MODELS, SUPPORTED_BACKENDS, SUPPORTED_OUTPUT_FORMATS
+from .constants import (
+    DEFAULT_MODELS,
+    DEFAULT_REFINE_MODEL,
+    OPENAI_TIMESTAMP_MODELS,
+    OPENAI_TRANSCRIPTION_MODELS,
+    SUPPORTED_BACKENDS,
+    SUPPORTED_OUTPUT_FORMATS,
+)
 from .downloader import MediaDownloader
 from .models import (
     BackendResult,
@@ -26,6 +33,7 @@ from .models import (
 from .normalizer import AudioNormalizer
 from .downloader import _sanitize_filename
 from .output import OutputWriter
+from .refine import ClaudeRefiner, build_refine_context
 from .resolver import InputResolver
 
 try:
@@ -80,6 +88,18 @@ def validate_openai_output_constraints(model: str, output_formats: Sequence[str]
                 "SRT output requires timestamps, but this OpenAI model does not return segment timestamps. "
                 "Use --model whisper-1 or --model gpt-4o-transcribe-diarize, or switch backend."
             )
+
+
+def validate_refine_constraints(backend: str, model: str) -> None:
+    if backend == "openai" and model in OPENAI_TRANSCRIPTION_MODELS and model not in OPENAI_TIMESTAMP_MODELS:
+        raise CapabilityError(
+            "--refine needs segmented output, but this OpenAI model returns text only. "
+            "Use --model whisper-1 or --model gpt-4o-transcribe-diarize, or switch backend."
+        )
+
+
+def _env_flag(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def has_transcription_content(result: BackendResult) -> bool:
@@ -232,6 +252,19 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--refine",
+        action=argparse.BooleanOptionalAction,
+        default=_env_flag("TRANSCRIBE_REFINE"),
+        help="Fix ASR errors in segment texts with Claude via the logged-in Claude Code CLI "
+        "(opt-in; timestamps unchanged). Default from TRANSCRIBE_REFINE.",
+    )
+    parser.add_argument(
+        "--refine-model",
+        default=os.getenv("TRANSCRIBE_REFINE_MODEL") or DEFAULT_REFINE_MODEL,
+        help=f"Claude model alias for --refine (default: {DEFAULT_REFINE_MODEL})",
+    )
+
+    parser.add_argument(
         "--log-level",
         default=os.getenv("TRANSCRIBE_LOG_LEVEL", "INFO"),
         choices=("DEBUG", "INFO", "WARNING", "ERROR"),
@@ -265,7 +298,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         output_formats = parse_output_formats(args.output_formats)
 
         LOGGER.info(
-            "Run configuration: backend=%s model=%s input=%s language=%s outputs=%s chunk_mode=%s timeout=%ss progress_log_seconds=%s",
+            "Run configuration: backend=%s model=%s input=%s language=%s outputs=%s chunk_mode=%s timeout=%ss progress_log_seconds=%s refine=%s",
             args.backend,
             args.model,
             args.input,
@@ -274,12 +307,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             args.chunk_mode,
             args.timeout_seconds,
             args.progress_log_seconds,
+            args.refine_model if args.refine else "off",
         )
         if args.log_file:
             LOGGER.info("Persistent log file enabled: %s", args.log_file)
 
         if args.backend == "openai":
             validate_openai_output_constraints(args.model, output_formats)
+
+        refiner: Optional[ClaudeRefiner] = None
+        if args.refine:
+            validate_refine_constraints(args.backend, args.model)
+            refiner = ClaudeRefiner(model=args.refine_model)  # fails fast if the claude CLI is missing
 
         context_info = build_context_info(args.context_info, args.hotwords)
 
@@ -339,6 +378,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     "Verify the input URL/media, backend/model, and language hint."
                 )
 
+            if refiner is not None:
+                refine_context = build_refine_context(
+                    media.metadata,
+                    title=None if request.is_remote else media.local_path.stem,
+                    language=backend_result.language or args.language,
+                    notes=context_info,
+                )
+                with log_stage(LOGGER, "refine", model=refiner.model, segments=len(backend_result.segments)):
+                    backend_result = refiner.refine(backend_result, refine_context)
+
             duration_sec = (
                 backend_result.duration_sec
                 if backend_result.duration_sec is not None and backend_result.duration_sec > 0
@@ -349,6 +398,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 chunking = backend_result.raw.get("chunking")
                 if isinstance(chunking, dict):
                     metadata["chunking"] = chunking
+                refine = backend_result.raw.get("refine")
+                if isinstance(refine, dict):
+                    metadata["refine"] = refine
 
             schema = _build_schema(
                 backend=args.backend,
