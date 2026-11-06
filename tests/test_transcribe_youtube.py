@@ -109,6 +109,22 @@ def test_input_resolver_detects_x_urls(url: str) -> None:
     assert req.is_youtube is False
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://www.instagram.com/reel/DfSpYiqAE9i/?xtok=MTBsZjduYXo4NTdjZg==",
+        "https://instagram.com/p/ABC123/",
+        "https://instagr.am/reel/ABC123",
+    ],
+)
+def test_input_resolver_detects_instagram_urls(url: str) -> None:
+    req = InputResolver.resolve(url)
+    assert req.platform == "instagram"
+    assert req.is_remote is True
+    assert req.is_youtube is False
+    assert req.source == url
+
+
 def test_input_resolver_rejects_lookalike_hosts() -> None:
     with pytest.raises(TranscriptionError, match="Input file not found"):
         InputResolver.resolve("https://dropbox.com/s/video.mp4")

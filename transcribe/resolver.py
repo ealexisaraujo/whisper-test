@@ -1,4 +1,4 @@
-"""Input resolution: remote URL (YouTube, X) vs local file."""
+"""Input resolution: remote URL (YouTube, X, Instagram) vs local file."""
 
 from __future__ import annotations
 
@@ -34,8 +34,9 @@ class InputResolver:
     PLATFORM_HOSTS = {
         "youtube": ("youtube.com", "youtu.be"),
         "x": ("x.com", "twitter.com"),
+        "instagram": ("instagram.com", "instagr.am"),
     }
-    PLATFORM_LABELS = {"youtube": "YouTube", "x": "X"}
+    PLATFORM_LABELS = {"youtube": "YouTube", "x": "X", "instagram": "Instagram"}
 
     @classmethod
     def resolve(cls, input_value: str) -> SourceRequest:

@@ -1,4 +1,4 @@
-"""Remote audio downloader (YouTube, X) using yt-dlp."""
+"""Remote audio downloader (YouTube, X, Instagram) using yt-dlp."""
 
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ def _extract_youtube_id(url: str) -> Optional[str]:
 
 
 class MediaDownloader:
-    """Downloads remote audio (YouTube, X) using yt-dlp."""
+    """Downloads remote audio (YouTube, X, Instagram) using yt-dlp."""
 
     def download(
         self,
@@ -55,7 +55,7 @@ class MediaDownloader:
         browser_cookies: Optional[str] = None,
         platform: str = "youtube",
     ) -> SourceMedia:
-        label = {"youtube": "YouTube", "x": "X"}.get(platform, platform)
+        label = {"youtube": "YouTube", "x": "X", "instagram": "Instagram"}.get(platform, platform)
         try:
             import yt_dlp
         except ModuleNotFoundError as exc:

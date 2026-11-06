@@ -244,9 +244,9 @@ def _build_schema(
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Transcribe YouTube/X/local media using MLX-Whisper or OpenAI backends"
+        description="Transcribe YouTube/X/Instagram/local media using MLX-Whisper or OpenAI backends"
     )
-    parser.add_argument("input", help="YouTube or X (Twitter) URL, or local media file path")
+    parser.add_argument("input", help="YouTube, X (Twitter) or Instagram URL, or local media file path")
 
     parser.add_argument(
         "--backend",
@@ -284,7 +284,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Optional comma-separated hotwords (merged into context info).",
     )
 
-    parser.add_argument("--cookies", help="Path to cookies file for yt-dlp (YouTube/X)")
+    parser.add_argument("--cookies", help="Path to cookies file for yt-dlp (YouTube/X/Instagram)")
     parser.add_argument(
         "--browser-cookies",
         choices=["chrome", "firefox", "opera", "edge", "safari"],
