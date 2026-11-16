@@ -375,8 +375,9 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--slides",
         action="store_true",
-        help="Also build a slide deck (<basename>_slides/slides.md + img/) from the slides shown in the video; "
-        "each slide is read by Claude via the logged-in Claude Code CLI and gets the speech said while it was shown.",
+        help="Also build a slide deck (<basename>_slides/slides.md + slides.html + img/) from the slides shown in "
+        "the video; each slide is read by Claude via the logged-in Claude Code CLI and gets the speech said while it "
+        "was shown.",
     )
     parser.add_argument(
         "--slides-box",
@@ -633,6 +634,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             out_dir=output_dir / f"{basename}_slides",
                             title=_slides_title(media, basename),
                             work_dir=temp_dir / "slides",
+                            source=media.source,
                         )
                 except Exception as exc:
                     raise SlidesError(f"slides failed (transcript outputs were written): {exc}") from exc
@@ -641,6 +643,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     OutputWriter.write(payload=schema, output_formats=["json"], output_dir=output_dir,
                                        output_basename=basename)
                 LOGGER.info("SLIDES -> %s", slides_meta["deck"])
+                if slides_meta.get("html"):
+                    LOGGER.info("SLIDES HTML -> %s", slides_meta["html"])
 
         return 0
 

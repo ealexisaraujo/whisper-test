@@ -1,5 +1,6 @@
 import base64
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -69,28 +70,78 @@ def _composite_video(seconds: int = 400) -> np.ndarray:
     return np.stack(frames)
 
 
-def test_detect_slide_box_composite_layout():
-    box, how = slides.detect_slide_box(_composite_video(), 1920, 1080)
-    assert how == "detected"
-    x, y, w, h = box
+def _dark_deck(seconds: int = 400, pip: bool = True, camera_every: int = 0) -> np.ndarray:
+    """Full-screen dark slides: sparse light "text" over a uniform background, a new slide every 10 s, optionally a
+    speaker overlay in the bottom-right corner (moving every second) and full-frame camera shots."""
+    rng = np.random.default_rng(1)
+    frames = []
+    text = None
+    for t in range(seconds):
+        if text is None or t % 10 == 0:
+            text = rng.random((60, 150)) < 0.1
+        if camera_every and (t // 10) % camera_every == 0:
+            frames.append(rng.integers(0, 256, (H, W), dtype=np.uint8))
+            continue
+        frame = np.full((H, W), 25, np.uint8)
+        frame[20:80, 20:170][text] = 230
+        if pip:
+            frame[80:104, 160:188] = rng.integers(0, 256, (24, 28), dtype=np.uint8)
+        frames.append(frame)
+    return np.stack(frames)
+
+
+def test_detect_layout_composite():
+    layout = slides.detect_layout(_composite_video(), 1920, 1080)
+    assert layout.kind == "composite" and layout.ignore is None
+    x, y, w, h = layout.box
     assert abs(x - 400) <= 10 and abs(y - 20) <= 10
     assert abs(x + w - 1900) <= 10 and abs(y + h - 820) <= 10
-    assert all(v % 2 == 0 for v in box)
+    assert all(v % 2 == 0 for v in layout.box)
 
 
-def test_detect_slide_box_scales_to_any_resolution():
-    box, how = slides.detect_slide_box(_composite_video(), 1280, 720)
-    assert how == "detected"
-    x, y, w, h = box
+def test_detect_layout_scales_to_any_resolution():
+    layout = slides.detect_layout(_composite_video(), 1280, 720)
+    assert layout.kind == "composite"
+    x, y, w, h = layout.box
     assert abs(x - 266) <= 8 and abs(x + w - 1266) <= 8 and abs(y + h - 546) <= 8
 
 
-def test_detect_slide_box_full_screen_slides_and_static_video():
+def test_detect_layout_full_screen_slides_and_static_video():
     pictures = [_pattern(i) for i in range(30)]
     full_screen = np.stack([pictures[t // 10] for t in range(300)])
-    assert slides.detect_slide_box(full_screen, 1920, 1080) == ((0, 0, 1920, 1080), "full-frame")
+    assert slides.detect_layout(full_screen, 1920, 1080) == ("full-frame", (0, 0, 1920, 1080), None)
     static = np.zeros((50, H, W), np.uint8)
-    assert slides.detect_slide_box(static, 1280, 720) == ((0, 0, 1280, 720), "full-frame")
+    assert slides.detect_layout(static, 1280, 720) == ("full-frame", (0, 0, 1280, 720), None)
+
+
+def test_detect_layout_full_frame_with_pip_speaker():
+    # Sparse content inside a uniform background: its bounding box has no edge, so it is not a slide box.
+    layout = slides.detect_layout(_dark_deck(), 1920, 1080)
+    assert layout.kind == "full-frame-pip" and layout.box == (0, 0, 1920, 1080)
+    x, y, w, h = layout.ignore
+    assert x <= 1600 and y <= 800 and x + w >= 1880 and y + h >= 1040  # covers the overlay ...
+    assert x >= 1540 and y >= 740  # ... plus a small margin only
+    assert all(v % 2 == 0 for v in layout.ignore)
+
+
+def test_detect_layout_full_frame_dark_deck_without_overlay():
+    assert slides.detect_layout(_dark_deck(pip=False), 1920, 1080) == ("full-frame", (0, 0, 1920, 1080), None)
+    # Cuts to a full-frame camera: the moving region is the whole frame, not an overlay to ignore.
+    assert slides.detect_layout(_dark_deck(pip=False, camera_every=3), 1920, 1080).kind == "full-frame"
+
+
+def test_ignore_rect_keeps_overlay_motion_out_of_shots_and_repeats():
+    deck = _dark_deck(seconds=30)  # slides change at 10 s and 20 s, the overlay every second
+    assert slides.segment_shots(deck) == []  # the overlay alone splits every second
+    mask = slides.rect_mask((H, W), (1570, 770, 340, 300), (0, 0, 1920, 1080))
+    assert mask[90, 170] and not mask[50, 100]
+    blanked = slides.blank(deck, mask)
+    shots = slides.segment_shots(blanked)
+    assert shots == [(0, 10), (10, 20), (20, 30)]
+    repeat = slides.blank(np.concatenate([deck[:10], deck[20:], deck[:10]]), mask)  # slide 1 shown again
+    frames = slides.dedupe_shots(repeat, slides.segment_shots(repeat))
+    assert len(frames) == 2 and frames[0]["repeats"] == [[20, 30]]
+    assert deck[5, 90, 170] != 0  # blank works on a copy
 
 
 def test_parse_box():
@@ -101,6 +152,38 @@ def test_parse_box():
 
 
 # --------------------------------------------------------------------------- builds, timeline
+
+
+def _write_pgm(path: Path, gray: np.ndarray) -> Path:
+    path.write_bytes(f"P5 {gray.shape[1]} {gray.shape[0]} 255\n".encode() + gray.astype(np.uint8).tobytes())
+    return path
+
+
+def _text_slide(lines: int, background: int, ink: int) -> np.ndarray:
+    img = np.full((216, 384), background, np.uint8)
+    for i in range(lines):
+        img[20 + 30 * i:32 + 30 * i, 30:300] = ink
+    return img
+
+
+@pytest.mark.parametrize("background,ink", [(25, 230), (245, 20)])
+def test_reveal_collapse_on_dark_and_light_slides(tmp_path, background, ink):
+    step1 = _write_pgm(tmp_path / "a.pgm", _text_slide(1, background, ink))
+    step2 = _write_pgm(tmp_path / "b.pgm", _text_slide(3, background, ink))
+    a, b = slides.load_content(step1), slides.load_content(step2)
+    assert 0 < a.mean() < b.mean() < slides.MAX_REVEAL_INK
+    assert slides.is_build_step(a, b)
+
+
+def test_reveal_check_ignores_the_speaker_overlay(tmp_path):
+    rng = np.random.default_rng(0)
+    first, second = _text_slide(1, 25, 230), _text_slide(2, 25, 230)
+    first[150:210, 300:380] = rng.integers(0, 256, (60, 80))  # the overlay moved between the two frames
+    second[150:210, 300:380] = rng.integers(0, 256, (60, 80))
+    a, b = _write_pgm(tmp_path / "a.pgm", first), _write_pgm(tmp_path / "b.pgm", second)
+    assert not slides.is_build_step(slides.load_content(a), slides.load_content(b))
+    ignore = slides.rect_mask((slides.INK_H, slides.INK_W), (1500, 750, 420, 330), (0, 0, 1920, 1080))
+    assert slides.is_build_step(slides.load_content(a, ignore), slides.load_content(b, ignore))
 
 
 def _ink(rows: int) -> np.ndarray:
@@ -266,7 +349,8 @@ def _fake_video_tools(monkeypatch, thumbs: np.ndarray, inks: Dict[int, np.ndarra
 
     monkeypatch.setattr(slides, "sample_thumbs", sample)
     monkeypatch.setattr(slides, "extract_frame", extract)
-    monkeypatch.setattr(slides, "load_ink", lambda path: inks[int(path.stem.split("_")[1])])
+    monkeypatch.setattr(slides, "load_content", lambda path, ignore=None: inks[int(path.stem.split("_")[1])])
+    monkeypatch.setattr(slides, "html_jpeg", lambda path: b"jpeg:" + path.read_bytes())
     return sampled
 
 
@@ -290,10 +374,16 @@ def test_builder_drops_not_a_slide_frames_and_writes_deck(monkeypatch, tmp_path)
         {"start": 12.0, "end": 14.0, "text": "on camera"},
         {"start": 18.0, "end": 21.0, "text": "next"},
     ]
-    meta = builder.build(Path("talk.mp4"), segs, tmp_path / "out_slides", "My Talk", tmp_path / "work")
+    meta = builder.build(Path("talk.mp4"), segs, tmp_path / "out_slides", "My Talk", tmp_path / "work",
+                         source="https://youtu.be/abc123")
 
     assert sampled == [(432, 16, 1472, 827)]  # manual box: no detection pass
     assert meta["box_source"] == "manual" and meta["box"] == [432, 16, 1472, 827]
+    assert meta["layout"] == "manual" and meta["ignore_rect"] is None
+    assert meta["html"] == str(tmp_path / "out_slides" / "slides.html")
+    page = (tmp_path / "out_slides" / "slides.html").read_text()
+    assert page.count("<section ") == 2 and base64.b64encode(b"jpeg:frame-20").decode() in page
+    assert "watch?v=abc123&amp;t=16s" in page
     assert (meta["frames"], meta["frames_read"], meta["not_a_slide"], meta["slides"]) == (3, 3, 1, 2)
     assert meta["cost_usd"] == pytest.approx(0.042)
     deck = (tmp_path / "out_slides" / "slides.md").read_text()
@@ -315,16 +405,98 @@ def test_builder_detects_box_and_rejects_bad_manual_box(monkeypatch, tmp_path):
     monkeypatch.setattr(slides.shutil, "which", lambda name: f"/bin/{name}")
     sampled = _fake_video_tools(monkeypatch, _composite_video(60), {})
     builder = slides.SlideDeckBuilder(cache_dir=tmp_path)
-    box, how, reuse = builder.resolve_box(Path("v.mp4"), (1920, 1080))
-    assert how == "detected" and reuse is None and sampled == [None]
+    layout, reuse = builder.resolve_layout(Path("v.mp4"), (1920, 1080))
+    assert layout.kind == "composite" and reuse is None and sampled == [None]
 
     builder.box = (1000, 0, 1000, 100)
     with pytest.raises(SlidesError, match="does not fit"):
-        builder.resolve_box(Path("v.mp4"), (1920, 1080))
+        builder.resolve_layout(Path("v.mp4"), (1920, 1080))
 
     monkeypatch.setattr(slides, "probe_video_size", lambda path: None)
     with pytest.raises(CapabilityError, match="video stream"):
         builder.build(Path("audio.m4a"), [], tmp_path / "o", "t", tmp_path / "w")
+
+
+def test_builder_full_frame_pip_masks_overlay_and_reports_layout(monkeypatch, tmp_path):
+    monkeypatch.setattr(slides.shutil, "which", lambda name: f"/bin/{name}")
+    deck = _dark_deck(seconds=60)
+    sampled = _fake_video_tools(monkeypatch, deck, {})
+    masks: List[Any] = []
+
+    def content(path, ignore=None):
+        masks.append(ignore)
+        return _ink(1) if int(path.stem.split("_")[1]) < 10 else _ink(2)
+
+    monkeypatch.setattr(slides, "load_content", content)
+    answer = _stream("## s")
+    monkeypatch.setattr(slides.subprocess, "run",
+                        lambda cmd, input=None, **kw: subprocess.CompletedProcess(cmd, 0, stdout=answer, stderr=""))
+    builder = slides.SlideDeckBuilder(cache_dir=tmp_path / "c")
+    meta = builder.build(Path("v.mp4"), [], tmp_path / "o", "T", tmp_path / "w")
+    assert sampled == [None]  # full-frame thumbs are sampled once and reused
+    assert meta["layout"] == "full-frame-pip" and meta["box"] == [0, 0, 1920, 1080]
+    assert meta["ignore_rect"] is not None and meta["box_source"] == "detected"
+    assert (meta["shots"], meta["frames"], meta["frames_read"]) == (6, 6, 5)  # first two frames are one reveal
+    assert all(m is not None and m.shape == (slides.INK_H, slides.INK_W) and m[200, 370] for m in masks)
+
+
+# --------------------------------------------------------------------------- HTML
+
+
+def test_split_heading_and_picture_only_heading():
+    assert slides.split_heading("## Title `x`\n\n- a") == ("Title `x`", "- a")
+    long = "*A full-page illustration of a lighthouse at dusk with waves crashing on the rocks below it.*"
+    heading, body = slides.split_heading(long)
+    assert heading.endswith("…") and len(heading) <= slides.HTML_PICTURE_HEADING + 1 and body == long
+    assert slides.split_heading("") == ("(picture)", "")
+
+
+def test_render_html_is_self_contained_escaped_and_linked():
+    deck = [
+        {"md": "## Intro <script>alert(1)</script> & `code`\n\n- point\n![x](https://cdn.example/img.png)",
+         "spans": [[65, 80], [5, 20]], "said": ["hello <b>you</b>", "& more"]},
+        {"md": "*A full-page illustration of a lighthouse at dusk with waves crashing on the rocks below it.*",
+         "spans": [[80, 95]], "said": []},
+    ]
+    page = slides.render_html("Talk <1>", "sonnet", deck, [b"jpg1", b"jpg2"],
+                              "https://www.youtube.com/watch?v=abc_123")
+    assert "<script" not in page and "<b>you</b>" not in page
+    assert "Talk &lt;1&gt;" in page and "hello &lt;b&gt;you&lt;/b&gt; &amp; more" in page
+    assert "Intro &lt;script&gt;alert(1)&lt;/script&gt; &amp; <code>code</code>" in page
+    links = re.findall(r'(?:href|src)="([^"#][^"]*)"', page)
+    allowed = ("https://www.youtube.com/watch?v=abc_123", "data:image/jpeg;base64,")
+    assert links and all(link.startswith(allowed) for link in links)
+    assert "cdn.example" not in page and "[image: x]" in page  # markdown images never load anything
+    assert 'href="https://www.youtube.com/watch?v=abc_123&amp;t=5s"' in page
+    assert 'href="https://www.youtube.com/watch?v=abc_123&amp;t=65s"' in page
+    assert '<a href="#s1">' in page and '<section id="s2">' in page and 'href="#top"' in page
+    assert "Slide 2 of 2" in page and "<details open>" in page and "prefers-color-scheme:dark" in page
+    assert base64.b64encode(b"jpg2").decode() in page
+    assert re.search(r"<h2>A full-page illustration[^<]*…</h2>", page)
+    assert '<nav><details open><summary>Contents</summary><ol><li><a href="#s1">Intro' in page
+
+
+def test_render_html_local_source_has_no_links():
+    one = [{"md": "## a", "spans": [[0, 4]], "said": []}]
+    page = slides.render_html("T", "sonnet", one, [b"x"], "/tmp/my talk.mp4")
+    assert "http" not in page and "Video: my talk.mp4" in page and "00:00-00:04" in page
+    vimeo = slides.render_html("T", "sonnet", one, [b"x"], "https://vimeo.com/1")
+    assert "&amp;t=" not in vimeo and 'href="https://vimeo.com/1"' in vimeo
+
+
+def test_html_jpeg_resizes_with_ffmpeg(tmp_path):
+    src = _write_pgm(tmp_path / "big.pgm", np.full((800, 1600), 128, np.uint8))
+    out = tmp_path / "small.jpg"
+    out.write_bytes(slides.html_jpeg(src))
+    assert out.read_bytes()[:2] == b"\xff\xd8" and slides.probe_video_size(out) == (slides.HTML_IMAGE_W, 550)
+
+
+def test_prompt_version_is_part_of_the_cache_key(monkeypatch, reader):
+    assert slides.SLIDES_PROMPT_VERSION >= 2
+    assert "overlaid" in slides.PROMPT and "do not describe it" in slides.PROMPT
+    key = reader.cache_path(b"img")
+    monkeypatch.setattr(slides, "SLIDES_PROMPT_VERSION", slides.SLIDES_PROMPT_VERSION + 1)
+    assert reader.cache_path(b"img") != key
 
 
 # --------------------------------------------------------------------------- CLI
@@ -379,13 +551,15 @@ class FakeBuilder:
     def check_box(self, size):
         self.size = size
 
-    def build(self, video, segments, out_dir, title, work_dir):
-        self.calls.append({"video": video, "segments": segments, "out_dir": out_dir, "title": title})
+    def build(self, video, segments, out_dir, title, work_dir, source=None):
+        self.calls.append({"video": video, "segments": segments, "out_dir": out_dir, "title": title,
+                           "source": source})
         # Transcript outputs must already be on disk when slides run.
         assert (out_dir.parent / "out.txt").exists()
         if self.box == (9, 9, 9, 9):
             raise RuntimeError("claude exploded")
-        return {"deck": str(out_dir / "slides.md"), "slides": 3, "cost_usd": 0.04}
+        return {"deck": str(out_dir / "slides.md"), "html": str(out_dir / "slides.html"), "slides": 3,
+                "layout": "manual", "ignore_rect": None, "cost_usd": 0.04}
 
 
 def test_cli_main_writes_transcript_then_slides(monkeypatch, tmp_path):
@@ -401,9 +575,10 @@ def test_cli_main_writes_transcript_then_slides(monkeypatch, tmp_path):
     call = builder.calls[0]
     assert call["video"] == media.resolve() and call["title"] == "My Talk"
     assert call["out_dir"] == tmp_path.resolve() / "out_slides"
-    assert call["segments"][0]["text"] == "hi"
+    assert call["segments"][0]["text"] == "hi" and call["source"] == str(media.resolve())
     data = json.loads((tmp_path / "out.json").read_text())
     assert data["metadata"]["slides"]["slides"] == 3
+    assert data["metadata"]["slides"]["html"].endswith("out_slides/slides.html")
 
 
 def test_cli_slides_failure_keeps_valid_transcript(monkeypatch, tmp_path):

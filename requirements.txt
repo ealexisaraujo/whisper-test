@@ -4,6 +4,7 @@ openai==2.20.0
 mlx-whisper>=0.4.0
 coremltools>=9.0; sys_platform == "darwin"
 soundfile>=0.12
+markdown-it-py==4.0.0  # --slides HTML deck (markdown -> HTML); was only a transitive dependency of rich
 # --- `--backend auto` pipeline (see docs/agents/auto-pipeline-spike.md) ---
 # NOTE: these lines were only verified inside the existing shared .venv on Apple Silicon (macOS 26.6.2, Python 3.11.1),
 # never on a fresh install.

@@ -1,10 +1,12 @@
 """Opt-in `--slides` stage: turn the slides shown in a talk video into a markdown deck.
 
-Pipeline: find the slide box (auto-detected or `--slides-box`), sample 1 fps grayscale thumbs of it, split them
-into stable shots, keep one frame per distinct slide (a later identical shot is a repeat), collapse progressive
+Pipeline: find the layout (auto-detected or `--slides-box`): a slide box beside the speaker video ("composite"),
+full-screen slides with a picture-in-picture speaker overlay ("full-frame-pip", the overlay becomes an ignore rect)
+or plain full-screen slides ("full-frame"). Sample 1 fps grayscale thumbs of the box (ignore rect blanked), split
+them into stable shots, keep one frame per distinct slide (a later identical shot is a repeat), collapse progressive
 reveals into their final state, read each slide with Claude through the headless Claude Code CLI (same isolation
-flags as the refine stage, answers cached per image), drop frames Claude says are not slides, and attach to each
-slide the transcript segments spoken while it was on screen.
+flags as the refine stage, answers cached per image), drop frames Claude says are not slides, attach to each slide
+the transcript segments spoken while it was on screen, and write `slides.md` plus a self-contained `slides.html`.
 
 Imported lazily by `cli.py` only when `--slides` is set, so other runs never load numpy from here.
 """
@@ -13,6 +15,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import html
 import json
 import logging
 import os
@@ -22,19 +25,27 @@ import subprocess
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, NamedTuple, Optional, Sequence, Tuple
 
 import numpy as np
+from markdown_it import MarkdownIt
 
 from logger_utils import log_stage
 
 from .constants import DEFAULT_SLIDES_MODEL
+from .downloader import _extract_youtube_id
 from .models import CapabilityError, SlidesError
 from .refine import resolve_claude_bin
 
 LOGGER = logging.getLogger("transcribe_youtube")
 
 Box = Tuple[int, int, int, int]  # x, y, w, h in source pixels
+
+
+class Layout(NamedTuple):
+    kind: str  # "composite" | "full-frame-pip" | "full-frame" | "manual"
+    box: Box  # area cropped for analysis and saved images
+    ignore: Optional[Box] = None  # speaker overlay inside the box: blanked for shots, repeats and reveals only
 
 # Analysis grid (not the source resolution): thresholds below were measured on 192x108 thumbs.
 THUMB_W, THUMB_H = 192, 108
@@ -43,21 +54,35 @@ SHOT_CHANGE = 0.002  # fraction of changed pixels that marks a different picture
 SAME_SLIDE = 0.0003  # stricter: a later shot this close is the same slide shown again (a 1-line diff measured 0.00106)
 MIN_SHOT_S = 2  # drop shots shorter than this (transitions, animations)
 
-# Slide-box detection on full-frame thumbs.
+# Layout detection on full-frame thumbs.
 SPEAKER_MOTION_RATE = 0.15  # pixels changing in more than this fraction of seconds are live video (the speaker);
 # measured: slide pixels <= 0.04, speaker 0.1-0.3 on a real talk, and its box is the same for 0.05-0.2
+SPEAKER_SOFT_DELTA = PIX_DELTA // 4  # smaller gray-level moves trace the speaker video's full extent (a PiP's core
+# alone measured 96 thumb px, about a fifth of the overlay)
+MIN_SPEAKER_AREA = 0.001  # a moving cluster smaller than this fraction of the frame is noise, not a speaker
+MAX_PIP_AREA = 0.25  # a moving region larger than this is not an overlay (e.g. cuts to a camera): nothing to ignore
+PIP_PAD = 3  # thumb pixels added around the speaker region to make the ignore rect
 DETECT_TIME_BINS = 20  # the video is split into this many equal periods ...
 SLIDE_MIN_BIN_FRACTION = 0.2  # ... and slide pixels change in at least this fraction of them (chrome only in bursts)
 FULL_FRAME_AREA = 0.8  # a detected region covering this much of the frame means full-screen slides
 MIN_REGION_AREA = 0.02  # a largest region smaller than this means no slide region was found
+EDGE_BAND = 2  # thumb pixels sampled on each side of a region border
+MIN_BOX_EDGE = 30  # median gray step across the region border that makes it a slide box (composite layout);
+# measured: a composite box 180-237, the content bbox of a full-screen dark deck 2-9
 
-# Progressive reveals.
+# Progressive reveals: "content" = pixels that differ from the slide background (median gray), dark or light slides.
 INK_W, INK_H = 384, 216
-INK_LEVEL = 200
-MAX_REVEAL_INK = 0.5  # reveal check applies only to light slides (ink on at most half the canvas)
+MAX_REVEAL_INK = 0.5  # reveal check applies only when content covers at most half the canvas (not full-bleed pictures)
+
+# HTML deck.
+HTML_IMAGE_W = 1100  # embedded slide images are scaled down to this width
+HTML_PICTURE_HEADING = 60  # characters kept from a picture-only slide's description when it becomes the heading
+_MD = MarkdownIt("commonmark", {"html": False}).enable("table")  # raw HTML is escaped
+# A markdown image would load a remote URL: render its alt text instead, so the page never touches the network.
+_MD.add_render_rule("image", lambda self, tokens, idx, options, env: html.escape(f"[image: {tokens[idx].content}]"))
 
 # Claude.
-SLIDES_PROMPT_VERSION = 1  # bump when PROMPT changes: it is part of the cache key
+SLIDES_PROMPT_VERSION = 2  # bump when PROMPT changes: it is part of the cache key
 SLIDES_MAX_WORKERS = 4
 SLIDES_ATTEMPTS = 2  # one retry per frame, then fail loudly
 SLIDES_CALL_TIMEOUT_SECONDS = 300
@@ -67,7 +92,8 @@ _NOT_A_SLIDE_RE = re.compile(r"[\s`*_\"'.]*NOT_A_SLIDE[\s`*_\"'.]*")
 PROMPT = (
     "This image is one frame from the talk \"{title}\". If it is not a presentation slide or a screen share "
     f"(for example a camera shot of the speaker, the stage or the audience), reply with exactly {NOT_A_SLIDE}. "
-    "Otherwise transcribe the slide to markdown.\n"
+    "A slide with a small video of the speaker overlaid on it is still a slide. Otherwise transcribe the slide to "
+    "markdown.\n"
     "- Start with the slide title as '## <title>' (no separate title: use the most prominent heading).\n"
     "- Keep every visible text verbatim, including lowercase styling.\n"
     "- Code goes in fenced blocks with a language tag.\n"
@@ -75,6 +101,8 @@ PROMPT = (
     "- Diagrams: reproduce the structure as nested lists or arrows (A -> B).\n"
     "- Illustrations or photos: one italic line describing what they show.\n"
     "- Leave out the speaker handle or logo in the footer.\n"
+    "- Ignore any video of the speaker overlaid on the slide (picture-in-picture): do not describe it. If it hides "
+    "part of the slide content, say so in one italic line.\n"
     "Reply with only the markdown."
 )
 
@@ -132,11 +160,48 @@ def extract_frame(video: Path, second: int, box: Optional[Box], out: Path) -> No
                    check=True, capture_output=True)
 
 
-def load_ink(image: Path) -> np.ndarray:
-    """Dark-pixel mask of an image on a fixed INK_W x INK_H grid (for build-step detection)."""
+def load_content(image: Path, ignore: Optional[np.ndarray] = None) -> np.ndarray:
+    """Content mask on a fixed INK_W x INK_H grid (for build-step detection): pixels whose gray level differs from
+    the slide background (the median gray) by more than PIX_DELTA, so dark and light slides both work.
+    `ignore` (bool, same grid) blanks the speaker overlay, which is left out of the background too."""
     raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(image), "-vf", f"scale={INK_W}:{INK_H},format=gray",
                           "-f", "rawvideo", "-"], check=True, capture_output=True).stdout
-    return np.frombuffer(raw, np.uint8).reshape(INK_H, INK_W) < INK_LEVEL
+    gray = np.frombuffer(raw, np.uint8).reshape(INK_H, INK_W).astype(np.int16)
+    keep = np.ones_like(gray, bool) if ignore is None else ~ignore
+    background = int(np.median(gray[keep])) if keep.any() else 0
+    return (np.abs(gray - background) > PIX_DELTA) & keep
+
+
+def html_jpeg(image: Path) -> bytes:
+    """The image as a JPEG at most HTML_IMAGE_W wide, for embedding in slides.html."""
+    try:
+        return subprocess.run(["ffmpeg", "-v", "error", "-i", str(image), "-vf", f"scale='min({HTML_IMAGE_W},iw)':-2",
+                               "-q:v", "5", "-f", "image2pipe", "-c:v", "mjpeg", "-"],
+                              check=True, capture_output=True).stdout
+    except subprocess.CalledProcessError as exc:
+        detail = exc.stderr.decode(errors="replace")[-300:]
+        raise SlidesError(f"ffmpeg could not resize {image.name}: {detail}") from exc
+
+
+def rect_mask(shape: Tuple[int, int], rect: Box, box: Box) -> np.ndarray:
+    """Bool mask on a (height, width) grid that samples `box`, True inside `rect` (source pixels, rounded outwards)."""
+    height, width = shape
+    bx, by, bw, bh = box
+    x, y, w, h = rect
+    mask = np.zeros(shape, bool)
+    x0, x1 = int(np.floor((x - bx) * width / bw)), int(np.ceil((x + w - bx) * width / bw))
+    y0, y1 = int(np.floor((y - by) * height / bh)), int(np.ceil((y + h - by) * height / bh))
+    mask[max(0, y0):max(0, y1), max(0, x0):max(0, x1)] = True
+    return mask
+
+
+def blank(thumbs: np.ndarray, mask: Optional[np.ndarray]) -> np.ndarray:
+    """Copy of the thumbs with the masked pixels set to 0 (they then never count as changed)."""
+    if mask is None or not mask.any():
+        return thumbs
+    out = thumbs.copy()
+    out[:, mask] = 0
+    return out
 
 
 # --------------------------------------------------------------------------- slide box
@@ -146,26 +211,41 @@ def _changed_mask(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     return np.abs(a.astype(np.int16) - b.astype(np.int16)) > PIX_DELTA
 
 
+def _flood(mask: np.ndarray, seeds: Sequence[Tuple[int, int]], seen: np.ndarray) -> List[Tuple[int, int]]:
+    """Pixels of `mask` 4-connected to the seeds (marks them in `seen`)."""
+    height, width = mask.shape
+    queue, region = deque(), []
+    for y, x in seeds:
+        if mask[y, x] and not seen[y, x]:
+            seen[y, x] = True
+            queue.append((int(y), int(x)))
+    while queue:
+        y, x = queue.popleft()
+        region.append((y, x))
+        for ny, nx in ((y + 1, x), (y - 1, x), (y, x + 1), (y, x - 1)):
+            if 0 <= ny < height and 0 <= nx < width and mask[ny, nx] and not seen[ny, nx]:
+                seen[ny, nx] = True
+                queue.append((ny, nx))
+    return region
+
+
 def _largest_component(mask: np.ndarray) -> List[Tuple[int, int]]:
     """Pixels of the largest 4-connected True region."""
-    height, width = mask.shape
     seen = np.zeros_like(mask, dtype=bool)
     best: List[Tuple[int, int]] = []
     for y0, x0 in zip(*np.nonzero(mask)):
-        if seen[y0, x0]:
-            continue
-        seen[y0, x0] = True
-        queue, region = deque([(int(y0), int(x0))]), []
-        while queue:
-            y, x = queue.popleft()
-            region.append((y, x))
-            for ny, nx in ((y + 1, x), (y - 1, x), (y, x + 1), (y, x - 1)):
-                if 0 <= ny < height and 0 <= nx < width and mask[ny, nx] and not seen[ny, nx]:
-                    seen[ny, nx] = True
-                    queue.append((ny, nx))
-        if len(region) > len(best):
-            best = region
+        if not seen[y0, x0]:
+            region = _flood(mask, [(y0, x0)], seen)
+            if len(region) > len(best):
+                best = region
     return best
+
+
+def _bbox(pixels: Sequence[Tuple[int, int]]) -> Tuple[int, int, int, int]:
+    """(x0, y0, x1, y1), end-exclusive, of (y, x) pixels."""
+    ys = [p[0] for p in pixels]
+    xs = [p[1] for p in pixels]
+    return min(xs), min(ys), max(xs) + 1, max(ys) + 1
 
 
 def _even_down(value: int) -> int:
@@ -176,40 +256,94 @@ def _even_up(value: int) -> int:
     return value + value % 2
 
 
-def detect_slide_box(thumbs: np.ndarray, width: int, height: int) -> Tuple[Box, str]:
-    """Find the slide area in full-frame thumbs; returns (box in source pixels, "detected" | "full-frame").
+def _to_source(rect: Tuple[int, int, int, int], width: int, height: int, tw: int, th: int) -> Box:
+    """Thumb-grid (x0, y0, x1, y1) -> source-pixel box; even coordinates keep ffmpeg's crop exact on 4:2:0 video."""
+    x0, y0, x1, y1 = rect
+    sx, sy = width / tw, height / th
+    left, top = _even_down(int(x0 * sx)), _even_down(int(y0 * sy))
+    right, bottom = min(width, _even_up(int(np.ceil(x1 * sx)))), min(height, _even_up(int(np.ceil(y1 * sy))))
+    return left, top, right - left, bottom - top
+
+
+def _speaker_rect(strong_rate: np.ndarray, soft_rate: np.ndarray) -> Optional[Tuple[int, int, int, int]]:
+    """Thumb-grid (x0, y0, x1, y1) of the live speaker video, or None.
+
+    Core = the largest cluster of pixels changing (by > PIX_DELTA) in more than SPEAKER_MOTION_RATE of the seconds;
+    it is grown through pixels that change that often by the smaller SPEAKER_SOFT_DELTA, which fills in the parts of
+    the video that move less (background, clothes), so the rect covers the whole overlay.
+    """
+    core = _largest_component(strong_rate > SPEAKER_MOTION_RATE)
+    if len(core) < MIN_SPEAKER_AREA * strong_rate.size:
+        return None
+    soft = (soft_rate > SPEAKER_MOTION_RATE) | (strong_rate > SPEAKER_MOTION_RATE)
+    return _bbox(_flood(soft, core, np.zeros_like(soft)))
+
+
+def _border_step(thumbs: np.ndarray, rect: Tuple[int, int, int, int]) -> float:
+    """Median gray step across the borders of rect (sides away from the frame edge), median over time.
+
+    A composite slide box sits in static chrome, so its border is a sharp edge in every frame; the bounding box of
+    the changing content of a full-screen deck lies inside a uniform slide background, so its border is flat.
+    """
+    _, th, tw = thumbs.shape
+    x0, y0, x1, y1 = rect
+    b = EDGE_BAND
+    pairs = []  # (inside band, outside band) per side, each (seconds, side length)
+    if x0 >= b + 1:
+        pairs.append((thumbs[:, y0:y1, x0 + 1:x0 + 1 + b].mean(2), thumbs[:, y0:y1, x0 - 1 - b:x0 - 1].mean(2)))
+    if tw - x1 >= b + 1:
+        pairs.append((thumbs[:, y0:y1, x1 - 1 - b:x1 - 1].mean(2), thumbs[:, y0:y1, x1 + 1:x1 + 1 + b].mean(2)))
+    if y0 >= b + 1:
+        pairs.append((thumbs[:, y0 + 1:y0 + 1 + b, x0:x1].mean(1), thumbs[:, y0 - 1 - b:y0 - 1, x0:x1].mean(1)))
+    if th - y1 >= b + 1:
+        pairs.append((thumbs[:, y1 - 1 - b:y1 - 1, x0:x1].mean(1), thumbs[:, y1 + 1:y1 + 1 + b, x0:x1].mean(1)))
+    if not pairs:
+        return 0.0
+    return float(np.median([np.median(np.abs(inside - outside).mean(1)) for inside, outside in pairs]))
+
+
+def detect_layout(thumbs: np.ndarray, width: int, height: int) -> Layout:
+    """Classify the video layout from full-frame thumbs; find the slide box and the speaker overlay to ignore.
 
     Per pixel: motion rate = fraction of seconds it changed; spread = in how many of DETECT_TIME_BINS equal
     periods it changed at all. The speaker (live video) changes most seconds; static conference chrome changes
     only in short bursts (intro, outro); slide pixels step at slide changes spread over the whole talk.
+    - composite: the largest slide region outside the speaker is bounded by a sharp static edge -> crop to it.
+    - full-frame-pip: no such box, and the speaker video is a small overlay -> full frame, overlay ignored.
+    - full-frame: no such box and no small overlay -> full frame.
     """
     full: Box = (0, 0, width, height)
     count = len(thumbs)
     if count < 3:
-        return full, "full-frame"
+        return Layout("full-frame", full)
     _, th, tw = thumbs.shape
     bins = min(DETECT_TIME_BINS, count - 1)
-    changes = np.zeros((th, tw), np.int32)
+    strong = np.zeros((th, tw), np.int32)
+    soft = np.zeros((th, tw), np.int32)
     spread = np.zeros((bins, th, tw), bool)
     for i in range(1, count):
-        diff = _changed_mask(thumbs[i], thumbs[i - 1])
-        changes += diff
-        spread[(i - 1) * bins // (count - 1)] |= diff
-    speaker = changes / (count - 1) > SPEAKER_MOTION_RATE
-    slide = ~speaker & (spread.sum(axis=0) >= max(1, round(bins * SLIDE_MIN_BIN_FRACTION)))
+        diff = np.abs(thumbs[i].astype(np.int16) - thumbs[i - 1].astype(np.int16))
+        changed = diff > PIX_DELTA
+        strong += changed
+        soft += diff > SPEAKER_SOFT_DELTA
+        spread[(i - 1) * bins // (count - 1)] |= changed
+    speaker = _speaker_rect(strong / (count - 1), soft / (count - 1))
+    outside_speaker = np.ones((th, tw), bool)
+    if speaker is not None:
+        outside_speaker[speaker[1]:speaker[3], speaker[0]:speaker[2]] = False
+    slide = outside_speaker & (spread.sum(axis=0) >= max(1, round(bins * SLIDE_MIN_BIN_FRACTION)))
     region = _largest_component(slide)
-    if len(region) < MIN_REGION_AREA * th * tw:
-        return full, "full-frame"
-    ys = [p[0] for p in region]
-    xs = [p[1] for p in region]
-    x0, x1, y0, y1 = min(xs), max(xs) + 1, min(ys), max(ys) + 1
-    if (x1 - x0) * (y1 - y0) >= FULL_FRAME_AREA * th * tw:
-        return full, "full-frame"
-    sx, sy = width / tw, height / th
-    # Even coordinates keep ffmpeg's crop exact on chroma-subsampled video.
-    left, top = _even_down(int(x0 * sx)), _even_down(int(y0 * sy))
-    right, bottom = min(width, _even_up(int(np.ceil(x1 * sx)))), min(height, _even_up(int(np.ceil(y1 * sy))))
-    return (left, top, right - left, bottom - top), "detected"
+    if len(region) >= MIN_REGION_AREA * th * tw:
+        rect = _bbox(region)
+        area = (rect[2] - rect[0]) * (rect[3] - rect[1])
+        if area < FULL_FRAME_AREA * th * tw and _border_step(thumbs, rect) >= MIN_BOX_EDGE:
+            return Layout("composite", _to_source(rect, width, height, tw, th))
+    if speaker is not None:
+        x0, y0, x1, y1 = speaker
+        x0, y0, x1, y1 = max(0, x0 - PIP_PAD), max(0, y0 - PIP_PAD), min(tw, x1 + PIP_PAD), min(th, y1 + PIP_PAD)
+        if (x1 - x0) * (y1 - y0) <= MAX_PIP_AREA * th * tw:
+            return Layout("full-frame-pip", full, _to_source((x0, y0, x1, y1), width, height, tw, th))
+    return Layout("full-frame", full)
 
 
 # --------------------------------------------------------------------------- shots
@@ -247,10 +381,10 @@ def dedupe_shots(thumbs: np.ndarray, shots: Sequence[Tuple[int, int]]) -> List[D
 
 
 def is_build_step(ink_a: np.ndarray, ink_b: np.ndarray) -> bool:
-    """True when slide b only adds content to slide a (a progressive reveal).
+    """True when slide b only adds content to slide a (a progressive reveal); masks come from `load_content`.
 
-    Only light, mostly blank slides qualify: a full-bleed picture or a dark slide has ink almost
-    everywhere, so it "covers" any earlier slide (measured: 0.86-0.98 ink) and must not swallow it.
+    Only mostly blank slides (dark or light) qualify: a full-bleed picture has content almost everywhere,
+    so it "covers" any earlier slide and must not swallow it (MAX_REVEAL_INK, on the content fraction).
     """
     a_sum = int(ink_a.sum())
     if ink_a.mean() > MAX_REVEAL_INK or ink_b.mean() > MAX_REVEAL_INK:
@@ -310,6 +444,105 @@ def render_deck(title: str, model: str, slides: Sequence[Mapping[str, Any]]) -> 
         if slide["said"]:
             lines += ["**What was said:**", "", "> " + " ".join(slide["said"]), ""]
     return "\n".join(lines)
+
+
+_HTML_CSS = """
+:root{--bg:#faf9f7;--card:#fff;--fg:#1d1d1f;--muted:#6b6b70;--line:#e6e4e0;--accent:#c2410c;--quote:#f3f1ed;--code:#f1efea}
+@media (prefers-color-scheme:dark){:root{--bg:#141414;--card:#1e1e1f;--fg:#ececec;--muted:#a0a0a6;--line:#2e2e30;--accent:#fb923c;--quote:#262628;--code:#2a2a2c}}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:17px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+main{max-width:760px;margin:0 auto;padding:20px 16px 64px}
+header h1{font-size:1.45rem;line-height:1.3;margin:0 0 6px}
+header p{margin:0 0 4px;color:var(--muted);font-size:.92rem;overflow-wrap:anywhere}
+a{color:var(--accent)}
+nav{margin:18px 0 26px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:4px 14px}
+nav summary{cursor:pointer;font-weight:600;padding:10px 0}
+nav ol{margin:0 0 12px;padding-left:1.6em;font-size:.95rem}
+nav li{margin:4px 0}
+nav li span{color:var(--muted);font-variant-numeric:tabular-nums;font-size:.85rem;margin-left:6px}
+section{background:var(--card);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;scroll-margin-top:8px}
+section>img{display:block;width:100%;height:auto;border-bottom:1px solid var(--line);background:#fff}
+.body{padding:12px 16px 16px}
+.meta{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 8px;color:var(--muted);font-size:.85rem;font-variant-numeric:tabular-nums}
+h2{font-size:1.15rem;margin:6px 0 10px;line-height:1.35;overflow-wrap:anywhere}
+.said{background:var(--quote);border-left:3px solid var(--accent);border-radius:6px;padding:10px 12px;margin:10px 0 0}
+.said p{margin:0}
+.said b{display:block;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:4px}
+details.text{margin-top:12px;font-size:.93rem;overflow-wrap:anywhere}
+details.text summary{cursor:pointer;color:var(--muted)}
+details.text h2,details.text h3{font-size:1rem}
+table{border-collapse:collapse;display:block;overflow-x:auto}
+th,td{border:1px solid var(--line);padding:4px 8px}
+pre{background:var(--code);padding:10px;border-radius:8px;overflow-x:auto;font-size:.82rem;line-height:1.45}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.88em}
+ul,ol{padding-left:1.3em}
+.top{display:inline-block;margin-top:10px;font-size:.85rem}
+"""
+_HEADING_RE = re.compile(r"^#{1,6}[ \t]+(.+?)[ \t#]*$", re.M)
+_ITALIC_LINE_RE = re.compile(r"^[ \t]*([*_])(?![*_\s])(.+?)\1[ \t]*$", re.M)
+_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def split_heading(md: str) -> Tuple[str, str]:
+    """(heading markdown, body markdown) of a slide answer. Picture-only slides (no markdown heading) use their
+    italic description, shortened to HTML_PICTURE_HEADING characters, as the heading and keep the full body."""
+    md = str(md).strip()
+    match = _HEADING_RE.search(md)
+    if match:
+        return match.group(1).strip(), (md[:match.start()] + md[match.end():]).strip()
+    match = _ITALIC_LINE_RE.search(md)
+    text = match.group(2).strip() if match else next((line.strip() for line in md.splitlines() if line.strip()), "")
+    if len(text) > HTML_PICTURE_HEADING:
+        text = text[:HTML_PICTURE_HEADING].rsplit(" ", 1)[0].rstrip(" ,.;:") + "…"
+    return text or "(picture)", md
+
+
+def youtube_time_url(source: Optional[str], seconds: float) -> Optional[str]:
+    video_id = _extract_youtube_id(source) if source and re.match(r"https?://", source) else None
+    return f"https://www.youtube.com/watch?v={video_id}&t={int(seconds)}s" if video_id else None
+
+
+def render_html(title: str, model: str, slides: Sequence[Mapping[str, Any]], images: Sequence[bytes],
+                source: Optional[str] = None) -> str:
+    """One self-contained page (no JavaScript, no network): slides [{md, spans, said}] with their JPEG bytes."""
+    esc = html.escape
+    total = len(slides)
+    toc, cards = [], []
+    for n, (slide, image) in enumerate(zip(slides, images), 1):
+        heading, body = split_heading(slide["md"])
+        heading_html = _MD.renderInline(heading)
+        spans = sorted(slide["spans"])
+        start = spans[0][0] if spans else 0
+        toc.append(f'<li><a href="#s{n}">{_TAG_RE.sub("", heading_html)}</a><span>{format_mmss(start)}</span></li>')
+        times = []
+        for s, e in spans:
+            label = f"{format_mmss(s)}-{format_mmss(e)}"
+            url = youtube_time_url(source, s)
+            times.append(f'<a href="{esc(url)}">▶ {label}</a>' if url else label)
+        said = " ".join(slide.get("said") or [])
+        said_html = f'<div class="said"><b>What was said</b><p>{esc(said)}</p></div>' if said else ""
+        text_html = (f'<details class="text"><summary>Slide text</summary>{_MD.render(body)}</details>'
+                     if body else "")
+        data = base64.b64encode(image).decode()
+        cards.append(
+            f'<section id="s{n}"><img loading="lazy" alt="Slide {n}" src="data:image/jpeg;base64,{data}">'
+            f'<div class="body"><div class="meta"><span>Slide {n} of {total}</span><span>{", ".join(times)}</span>'
+            f'</div><h2>{heading_html}</h2>{said_html}{text_html}<a class="top" href="#top">↑ Contents</a></div>'
+            f'</section>')
+    if source and re.match(r"https?://", source):
+        source_html = f'<p>Video: <a href="{esc(source)}">{esc(source)}</a></p>'
+    elif source:
+        source_html = f"<p>Video: {esc(Path(source).name)}</p>"
+    else:
+        source_html = ""
+    return (f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
+            f'<meta name="viewport" content="width=device-width,initial-scale=1">'
+            f"<title>{esc(title)}</title><style>{_HTML_CSS}</style></head><body><main id=\"top\">"
+            f"<header><h1>{esc(title)}</h1>{source_html}<p>{total} slides read by Claude ({esc(model)}), each with "
+            f"what the speaker said while it was on screen.</p></header>"
+            f'<nav><details open><summary>Contents</summary><ol>{"".join(toc)}</ol></details></nav>'
+            + "".join(cards) + "</main></body></html>\n")
 
 
 # --------------------------------------------------------------------------- Claude
@@ -395,7 +628,7 @@ class SlideReader:
 
 
 class SlideDeckBuilder:
-    """Video + transcript segments -> `<out_dir>/slides.md` + `<out_dir>/img/*.jpg`."""
+    """Video + transcript segments -> `<out_dir>/slides.md`, `<out_dir>/slides.html` and `<out_dir>/img/*.jpg`."""
 
     def __init__(self, model: Optional[str] = None, *, box: Optional[Box] = None, claude_bin: Optional[str] = None,
                  cache_dir: Optional[Path] = None, max_workers: int = SLIDES_MAX_WORKERS):
@@ -414,28 +647,28 @@ class SlideDeckBuilder:
             if x + w > size[0] or y + h > size[1]:
                 raise SlidesError(f"--slides-box {x},{y},{w},{h} does not fit the {size[0]}x{size[1]} video")
 
-    def resolve_box(self, video: Path, size: Tuple[int, int]) -> Tuple[Box, str, Optional[np.ndarray]]:
-        """(box, how, full-frame thumbs when they double as the slide thumbs)."""
+    def resolve_layout(self, video: Path, size: Tuple[int, int]) -> Tuple[Layout, Optional[np.ndarray]]:
+        """(layout, full-frame thumbs when they double as the slide thumbs)."""
         width, height = size
         if self.box is not None:
             self.check_box(size)
-            return self.box, "manual", None
-        with log_stage(LOGGER, "slides_detect_box"):
+            return Layout("manual", self.box), None
+        with log_stage(LOGGER, "slides_detect_layout"):
             thumbs = sample_thumbs(video)
-            box, how = detect_slide_box(thumbs, width, height)
-        LOGGER.info("slides: box %s (%s) on %sx%s video", ",".join(map(str, box)), how, width, height)
-        return box, how, thumbs if how == "full-frame" else None
+            layout = detect_layout(thumbs, width, height)
+        LOGGER.info("slides: layout %s, box %s, ignore %s on %sx%s video", layout.kind, ",".join(map(str, layout.box)),
+                    ",".join(map(str, layout.ignore)) if layout.ignore else "none", width, height)
+        return layout, thumbs if layout.box == (0, 0, width, height) else None
 
-    def build(self, video: Path, segments: Sequence[Mapping[str, Any]], out_dir: Path, title: str,
-              work_dir: Path) -> Dict[str, Any]:
-        size = probe_video_size(video)
-        if size is None:
-            raise CapabilityError(f"--slides needs a video stream, but {video.name} has none.")
-        box, how, thumbs = self.resolve_box(video, size)
-        crop = None if box == (0, 0, size[0], size[1]) else box
+    def select_frames(self, video: Path, size: Tuple[int, int], work_dir: Path) -> Dict[str, Any]:
+        """Everything before Claude: layout, shots, distinct frames (extracted to work_dir), collapsed candidates."""
+        layout, thumbs = self.resolve_layout(video, size)
+        crop = None if layout.box == (0, 0, size[0], size[1]) else layout.box
         with log_stage(LOGGER, "slides_shots"):
             if thumbs is None:
                 thumbs = sample_thumbs(video, crop)
+            if layout.ignore is not None:  # the speaker overlay must not split shots or hide repeats
+                thumbs = blank(thumbs, rect_mask(thumbs.shape[1:], layout.ignore, layout.box))
             shots = segment_shots(thumbs)
             frames = dedupe_shots(thumbs, shots)
         LOGGER.info("slides: %s s sampled, %s stable shots, %s distinct frames", len(thumbs), len(shots), len(frames))
@@ -446,9 +679,21 @@ class SlideDeckBuilder:
         paths = []
         for frame in frames:
             path = work_dir / f"frame_{frame['second']:05d}.jpg"
-            extract_frame(video, frame["second"], crop, path)
+            extract_frame(video, frame["second"], crop, path)  # saved images keep the overlay
             paths.append(path)
-        candidates = collapse_builds(frames, [load_ink(p) for p in paths])
+        ignore = None if layout.ignore is None else rect_mask((INK_H, INK_W), layout.ignore, layout.box)
+        candidates = collapse_builds(frames, [load_content(p, ignore) for p in paths])
+        return {"layout": layout, "seconds": len(thumbs), "shots": shots, "frames": frames, "paths": paths,
+                "candidates": candidates}
+
+    def build(self, video: Path, segments: Sequence[Mapping[str, Any]], out_dir: Path, title: str,
+              work_dir: Path, source: Optional[str] = None) -> Dict[str, Any]:
+        """`source` (URL or path of the input) is linked from slides.html; YouTube sources get timestamp links."""
+        size = probe_video_size(video)
+        if size is None:
+            raise CapabilityError(f"--slides needs a video stream, but {video.name} has none.")
+        picked = self.select_frames(video, size, work_dir)
+        layout, frames, paths, candidates = picked["layout"], picked["frames"], picked["paths"], picked["candidates"]
 
         with log_stage(LOGGER, "slides_read", model=self.model, frames=len(candidates)):
             results = self._read_all([paths[c["frame"]] for c in candidates], title)
@@ -463,15 +708,21 @@ class SlideDeckBuilder:
             slide.update(image=f"img/{name}", said=text)
         deck = out_dir / "slides.md"
         deck.write_text(render_deck(title, self.model, slides), encoding="utf-8")
+        page = out_dir / "slides.html"
+        images = [html_jpeg(paths[s["frame"]]) for s in slides]
+        page.write_text(render_html(title, self.model, slides, images, source), encoding="utf-8")
 
         cost = round(sum(cost for _, cost, _ in results), 6)
         meta = {
             "deck": str(deck),
+            "html": str(page),
             "model": self.model,
-            "box": list(box),
-            "box_source": how,
+            "layout": layout.kind,
+            "box": list(layout.box),
+            "box_source": "manual" if layout.kind == "manual" else "detected",
+            "ignore_rect": list(layout.ignore) if layout.ignore is not None else None,
             "video_size": list(size),
-            "shots": len(shots),
+            "shots": len(picked["shots"]),
             "frames": len(frames),
             "frames_read": len(candidates),
             "not_a_slide": len(candidates) - len(slides),
@@ -479,8 +730,9 @@ class SlideDeckBuilder:
             "cached": sum(1 for _, _, cached in results if cached),
             "cost_usd": cost,
         }
-        LOGGER.info("slides: %s frames -> %s slides (%s not slides, %s cached); claude cost $%.3f; deck %s",
-                    len(frames), len(slides), meta["not_a_slide"], meta["cached"], cost, deck)
+        LOGGER.info("slides: %s layout, %s frames -> %s slides (%s not slides, %s cached); claude cost $%.3f; "
+                    "deck %s; html %s", layout.kind, len(frames), len(slides), meta["not_a_slide"], meta["cached"],
+                    cost, deck, page)
         return meta
 
     def _read_all(self, images: Sequence[Path], title: str) -> List[Tuple[str, float, bool]]:

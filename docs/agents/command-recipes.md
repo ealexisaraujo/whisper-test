@@ -62,7 +62,9 @@ python transcribe_youtube.py ./talk.mp4 --backend eg2 --refine --refine-model ha
 Slide deck from a talk video (requires the logged-in Claude Code CLI; ~$0.014/slide on Sonnet, cached per image):
 ```bash
 python transcribe_youtube.py "https://www.youtube.com/watch?v=<id>" --backend auto --slides
-# -> <basename>.{txt,srt,json} + <basename>_slides/slides.md + <basename>_slides/img/
+# -> <basename>.{txt,srt,json} + <basename>_slides/{slides.md,slides.html,img/}
+# slides.html is self-contained (open it on a phone); the log and metadata.slides show the detected layout
+# (composite / full-frame-pip / full-frame), box and ignore rect
 # wrong auto-detected slide area: pass it in source pixels (x,y,w,h); cheaper model
 python transcribe_youtube.py ./talk.mp4 --slides --slides-box 432,16,1472,827 --slides-model haiku
 ```
