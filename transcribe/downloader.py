@@ -134,3 +134,51 @@ class MediaDownloader:
             source_name=_sanitize_filename(title),
             metadata=metadata,
         )
+
+    def download_video(
+        self,
+        url: str,
+        output_dir: Path,
+        cookies_file: Optional[str] = None,
+        browser_cookies: Optional[str] = None,
+        platform: str = "youtube",
+    ) -> Path:
+        """Video stream for `--slides` (video-only, mp4 preferred, height <= 1080), next to the audio download."""
+        label = {"youtube": "YouTube", "x": "X", "instagram": "Instagram"}.get(platform, platform)
+        try:
+            import yt_dlp
+        except ModuleNotFoundError as exc:
+            raise TranscriptionError(
+                f"yt-dlp is required for {label} inputs. Install requirements.txt first."
+            ) from exc
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+        ydl_opts: Dict[str, Any] = {
+            # Platforms without separate video streams (often X/Instagram) fall back to a muxed file.
+            "format": "bestvideo[ext=mp4][height<=1080]/bestvideo[height<=1080]/best[height<=1080]/best",
+            "outtmpl": str(output_dir / "%(id)s.video.%(ext)s"),
+            "quiet": True,
+            "noplaylist": True,
+        }
+        if cookies_file:
+            ydl_opts["cookiefile"] = cookies_file
+        if browser_cookies:
+            ydl_opts["cookiesfrombrowser"] = (browser_cookies,)
+
+        try:
+            with log_stage(LOGGER, f"{platform}_video_download", source=url):
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(url, download=True)
+        except Exception as exc:
+            raise TranscriptionError(f"{label} video download failed: {exc}") from exc
+
+        candidates = sorted(output_dir.glob(f"{info.get('id')}.video.*"), key=lambda p: p.stat().st_mtime)
+        if not candidates:
+            raise TranscriptionError(f"{label} video download completed but the video file was not found.")
+        video_path = candidates[-1]
+        try:
+            size = format_bytes(video_path.stat().st_size)
+        except OSError:
+            size = "unknown"
+        LOGGER.info("Downloaded video file: %s (size=%s)", video_path, size)
+        return video_path

@@ -75,13 +75,13 @@ REFINE_JSON_SCHEMA: Dict[str, Any] = {
 _WORD_RE = re.compile(r"[\w']+", re.UNICODE)
 
 
-def resolve_claude_bin(explicit: Optional[str] = None) -> str:
+def resolve_claude_bin(explicit: Optional[str] = None, *, feature: str = "--refine") -> str:
     """Locate the Claude Code CLI: explicit path, then CLAUDE_BIN, then PATH."""
     candidate = explicit or os.getenv("CLAUDE_BIN") or "claude"
     resolved = shutil.which(candidate)
     if not resolved:
         raise CapabilityError(
-            f"--refine requires the Claude Code CLI, but '{candidate}' was not found. "
+            f"{feature} requires the Claude Code CLI, but '{candidate}' was not found. "
             "Install Claude Code and log in (`claude` once interactively), or set CLAUDE_BIN to its path."
         )
     return resolved

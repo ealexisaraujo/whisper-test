@@ -34,3 +34,6 @@ OPENAI_TIMESTAMP_MODELS = {
 
 # Refine stage (opt-in): Claude model alias passed to `claude --model`; never pin a version id here.
 DEFAULT_REFINE_MODEL = "sonnet"
+
+# Slides stage (opt-in `--slides`): Claude model alias that reads each slide image.
+DEFAULT_SLIDES_MODEL = "sonnet"

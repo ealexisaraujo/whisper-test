@@ -15,6 +15,10 @@ class CapabilityError(TranscriptionError):
     """Raised when the requested backend/model/output combination is unsupported."""
 
 
+class SlidesError(TranscriptionError):
+    """Raised by the opt-in `--slides` stage; once transcription ran, the transcript outputs are already written."""
+
+
 @dataclass
 class SourceRequest:
     source: str

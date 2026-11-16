@@ -18,6 +18,7 @@ from .chunking import transcribe_with_chunking
 from .constants import (
     DEFAULT_MODELS,
     DEFAULT_REFINE_MODEL,
+    DEFAULT_SLIDES_MODEL,
     OPENAI_TIMESTAMP_MODELS,
     OPENAI_TRANSCRIPTION_MODELS,
     SUPPORTED_BACKENDS,
@@ -27,6 +28,7 @@ from .downloader import MediaDownloader
 from .models import (
     BackendResult,
     CapabilityError,
+    SlidesError,
     SourceMedia,
     TranscriptionError,
 )
@@ -47,6 +49,13 @@ LOGGER = logging.getLogger("transcribe_youtube")
 # Resolve the root-level shim path for switch hints.
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _SHIM_PATH = _PROJECT_ROOT / "transcribe_youtube.py"
+
+
+def _slides_module():
+    """`--slides` stage, imported lazily: runs without it never load `transcribe.slides` (numpy, ffmpeg helpers)."""
+    from . import slides
+
+    return slides
 
 
 def run_auto(*args: Any, **kwargs: Any):
@@ -103,6 +112,23 @@ def validate_refine_constraints(backend: str, model: str) -> None:
             "--refine needs segmented output, but this OpenAI model returns text only. "
             "Use --model whisper-1 or --model gpt-4o-transcribe-diarize, or switch backend."
         )
+
+
+def validate_slides_constraints(backend: str, model: str) -> None:
+    if backend == "openai" and model in OPENAI_TRANSCRIPTION_MODELS and model not in OPENAI_TIMESTAMP_MODELS:
+        raise CapabilityError(
+            "--slides needs timestamped segments to place the speech under each slide, but this OpenAI model "
+            "returns text only. Use --model whisper-1 or --model gpt-4o-transcribe-diarize, or switch backend."
+        )
+
+
+def _slides_title(media: SourceMedia, fallback: str) -> str:
+    """Talk title for the slide prompt and deck heading: downloader title, else the local file name, else basename."""
+    platform = media.metadata.get("platform")
+    title = media.metadata.get(f"{platform}_title") if platform else None
+    if not title and not platform:
+        title = media.local_path.stem
+    return str(title or fallback).strip() or fallback
 
 
 def _env_flag(name: str) -> bool:
@@ -347,6 +373,22 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--slides",
+        action="store_true",
+        help="Also build a slide deck (<basename>_slides/slides.md + img/) from the slides shown in the video; "
+        "each slide is read by Claude via the logged-in Claude Code CLI and gets the speech said while it was shown.",
+    )
+    parser.add_argument(
+        "--slides-box",
+        help="Slide area as x,y,w,h in source pixels (default: auto-detected from the video). Requires --slides.",
+    )
+    parser.add_argument(
+        "--slides-model",
+        default=os.getenv("TRANSCRIBE_SLIDES_MODEL") or DEFAULT_SLIDES_MODEL,
+        help=f"Claude model alias that reads the slides (default: {DEFAULT_SLIDES_MODEL})",
+    )
+
+    parser.add_argument(
         "--terms",
         help="Comma-separated names/terms the speakers likely say (auto backend: bias hints for the refine stage).",
     )
@@ -417,6 +459,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             validate_refine_constraints(args.backend, args.model)
             refiner = ClaudeRefiner(model=args.refine_model)  # fails fast if the claude CLI is missing
 
+        deck_builder = None
+        if args.slides_box and not args.slides:
+            raise TranscriptionError("--slides-box requires --slides.")
+        if args.slides:
+            validate_slides_constraints(args.backend, args.model)
+            slides = _slides_module()
+            box = slides.parse_box(args.slides_box) if args.slides_box else None
+            deck_builder = slides.SlideDeckBuilder(args.slides_model, box=box)  # fails fast without the claude CLI
+
         context_info = build_context_info(args.context_info, args.hotwords)
 
         generation: Mapping[str, Any] = {
@@ -454,6 +505,24 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     source_name=_sanitize_filename(local_path.stem),
                     metadata={},
                 )
+
+            video_path: Optional[Path] = None
+            if deck_builder is not None:
+                if request.is_remote:
+                    LOGGER.info("--slides: downloading the video stream...")
+                    video_path = MediaDownloader().download_video(
+                        request.source,
+                        output_dir=temp_dir / "video",
+                        cookies_file=args.cookies,
+                        browser_cookies=args.browser_cookies,
+                        platform=request.platform,
+                    )
+                else:
+                    video_path = media.local_path
+                video_size = _slides_module().probe_video_size(video_path)
+                if video_size is None:
+                    raise CapabilityError(f"--slides needs a video stream, but {video_path.name} has none.")
+                deck_builder.check_box(video_size)  # a bad --slides-box fails before transcribing
 
             LOGGER.info("Normalizing media for backend '%s'...", args.backend)
             normalized = AudioNormalizer().normalize(media.local_path, args.backend, temp_dir)
@@ -554,8 +623,30 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             for fmt, path in written.items():
                 LOGGER.info("%s -> %s", fmt.upper(), path)
 
+            if deck_builder is not None and video_path is not None:
+                # Transcript files are already on disk: a slides failure exits non-zero but leaves them intact.
+                try:
+                    with log_stage(LOGGER, "slides", model=deck_builder.model):
+                        slides_meta = deck_builder.build(
+                            video_path,
+                            backend_result.segments,
+                            out_dir=output_dir / f"{basename}_slides",
+                            title=_slides_title(media, basename),
+                            work_dir=temp_dir / "slides",
+                        )
+                except Exception as exc:
+                    raise SlidesError(f"slides failed (transcript outputs were written): {exc}") from exc
+                if "json" in written:
+                    schema["metadata"]["slides"] = slides_meta
+                    OutputWriter.write(payload=schema, output_formats=["json"], output_dir=output_dir,
+                                       output_basename=basename)
+                LOGGER.info("SLIDES -> %s", slides_meta["deck"])
+
         return 0
 
+    except SlidesError as exc:
+        LOGGER.error(str(exc))
+        return 1
     except TranscriptionError as exc:
         LOGGER.error(str(exc))
         LOGGER.error(_no_fallback_message(args))
